@@ -12,7 +12,7 @@ A date/time expression engine in Go that reads English and Spanish. A CLI (v1) a
 - External services: none
 
 ## Folder map
-Currently exists: `go.mod`, `.gitignore`, `plans/`, and `expr/` (`token.go`, `lexer.go`, `lexer_test.go`, `normalize.go`, `normalize_test.go`, `vocab_en.go`, `vocab_es.go`). Each plan in `plans/` creates only what it needs. Target:
+Currently exists: `go.mod`, `.gitignore`, `plans/`, and `expr/` (`token.go`, `lexer.go`, `lexer_test.go`, `normalize.go`, `normalize_test.go`, `vocab_en.go`, `vocab_es.go`, `ast.go`, `parser.go`, `parser_test.go`, `print.go`, `print_test.go`). Each plan in `plans/` creates only what it needs. Target:
 
 ```
 go.mod
