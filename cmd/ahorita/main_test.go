@@ -722,6 +722,25 @@ func TestBusinessCLI(t *testing.T) {
 			args:    withTZ("feriados MX 2026"),
 			wantSub: "2026-01-01  Año Nuevo",
 		},
+		{
+			name:    "cron zone note prints to stderr",
+			args:    withTZ("every monday 8pm, to UTC, to cron"),
+			wantOut: "0 2 * * 2\n",
+			wantErr: "weekday shifts from Monday to Tuesday in UTC",
+		},
+		{
+			name:    "cron zone note in json",
+			args:    withTZ("--json", "every monday 8pm, to UTC, to cron"),
+			wantSub: `"note":"weekday shifts from Monday to Tuesday in UTC"`,
+		},
+		{
+			name: "calendar ics skips days off and recurring holidays",
+			args: withTZ("--country", "none", "--calendar", "/team.ics", "2026-11-13 + 2 business days"),
+			files: map[string]string{
+				"/team.ics": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261116\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;TZID=America/Mexico_City:20261117T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+			},
+			wantOut: "2026-11-18\n",
+		},
 	}
 
 	for _, tc := range tests {

@@ -55,24 +55,96 @@ var readmeCases = []readmeCase{
 	{line: "<a> .. <b>", input: "2026-11-16 .. 2026-11-20", want: "2026-11-16 → 2026-11-20"},
 	{line: "how many <unit> between <a> and <b>", input: "how many days between 2026-11-16 and 2026-11-20", want: "4"},
 
-	// Recurrence & cron (plan 10)
+	// Recurrence & cron
 	{
-		line:    "every monday",
-		input:   "every monday",
-		wantErr: "aren't available yet",
-		skipBug: `BUG: recurrence syntax "every monday" not recognized before plan 10; fails with unknown timezone/word instead of "aren't available yet"`,
+		line:  "every monday",
+		input: "every monday",
+		want:  "2026-11-16\n2026-11-23\n2026-11-30\n2026-12-07\n2026-12-14",
 	},
 	{
-		line:    "every day 2nd",
-		input:   "every day 2nd",
-		wantErr: "aren't available yet",
-		skipBug: `BUG: recurrence syntax "every day 2nd" not recognized before plan 10; fails parsing at "day" instead of "aren't available yet"`,
+		line:  "every monday 9am",
+		input: "every monday 9am",
+		want:  "2026-11-16T09:00:00-06:00\n2026-11-23T09:00:00-06:00\n2026-11-30T09:00:00-06:00\n2026-12-07T09:00:00-06:00\n2026-12-14T09:00:00-06:00",
 	},
 	{
-		line:    "…, to cron",
-		input:   "every monday, to cron",
-		wantErr: "aren't available yet",
-		skipBug: `BUG: cron syntax "…, to cron" not recognized before plan 10; fails before checking "aren't available yet"`,
+		line:  "every 2 days",
+		input: "every 2 days",
+		want:  "2026-11-16\n2026-11-18\n2026-11-20\n2026-11-22\n2026-11-24",
+	},
+	{
+		line:  "every 2 weeks",
+		input: "every 2 weeks",
+		want:  "2026-11-28\n2026-12-12\n2026-12-26\n2027-01-09\n2027-01-23",
+	},
+	{
+		line:  "every 90 minutes",
+		input: "every 90 minutes",
+		want:  "2026-11-14T15:00:00-06:00\n2026-11-14T16:30:00-06:00\n2026-11-14T18:00:00-06:00\n2026-11-14T19:30:00-06:00\n2026-11-14T21:00:00-06:00",
+	},
+	{
+		line:  "every weekday",
+		input: "every weekday",
+		want:  "2026-11-16\n2026-11-17\n2026-11-18\n2026-11-19\n2026-11-20",
+	},
+	{
+		line:  "every day 2nd",
+		input: "every day 2nd",
+		want:  "2026-12-02\n2027-01-02\n2027-02-02\n2027-03-02\n2027-04-02",
+	},
+	{
+		line:  "every month 15th",
+		input: "every month 15th",
+		want:  "2026-11-15\n2026-12-15\n2027-01-15\n2027-02-15\n2027-03-15",
+	},
+	{
+		line:  "every weekday 2nd",
+		input: "every weekday 2nd",
+		want:  "2026-11-17\n2026-11-24\n2026-12-01\n2026-12-08\n2026-12-15",
+	},
+	{
+		line:  "every day-year 2nd",
+		input: "every day-year 2nd",
+		want:  "2027-01-02\n2028-01-02\n2029-01-02\n2030-01-02\n2031-01-02",
+	},
+	{
+		line:  "every 2nd monday",
+		input: "every 2nd monday",
+		want:  "2026-12-14\n2027-01-11\n2027-02-08\n2027-03-08\n2027-04-12",
+	},
+	{
+		line:  "every year aug 20",
+		input: "every year aug 20",
+		want:  "2027-08-20\n2028-08-20\n2029-08-20\n2030-08-20\n2031-08-20",
+	},
+	{
+		line:  "…, next <n>",
+		input: "every monday, next 2",
+		want:  "2026-11-16\n2026-11-23",
+	},
+	{
+		line:  "…, to cron",
+		input: "every monday, to cron",
+		want:  "0 0 * * 1",
+	},
+	{
+		line:  "…, to ics",
+		input: "every monday 9am, to ics",
+		want:  "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//ahorita//EN\r\nBEGIN:VEVENT\r\nUID:11b234c3677a4ecd1f8cec038e461b07@ahorita\r\nDTSTAMP:20261114T203000Z\r\nDTSTART;TZID=America/Mexico_City:20261116T090000\r\nSUMMARY:every monday 09:00\r\nRRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0;BYSECOND=0\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+	},
+	{
+		line:  "…, to grid",
+		input: "today, to grid",
+		want:  "   November 2026\nMo Tu We Th Fr Sa Su\n                   1\n 2  3  4  5  6  7  8\n 9 10 11 12 13 14*15\n16 17 18 19 20 21 22\n23 24 25 26 27 28 29\n30",
+	},
+	{
+		line:  `cron "0 9 * * 1,3"`,
+		input: `cron "0 9 * * 1,3"`,
+		want:  "2026-11-16T09:00:00-06:00\n2026-11-18T09:00:00-06:00\n2026-11-23T09:00:00-06:00\n2026-11-25T09:00:00-06:00\n2026-11-30T09:00:00-06:00",
+	},
+	{
+		line:  "…, explain",
+		input: `cron "0 9 * * 1,3", explain`,
+		want:  "At 09:00 on Monday and Wednesday",
 	},
 
 	// Timezones

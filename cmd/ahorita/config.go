@@ -625,6 +625,22 @@ func loadDaysOff(paths []string, readFile func(string) ([]byte, error), ctx *exp
 		if err != nil {
 			return fmt.Errorf("read calendar %q: %w", path, err)
 		}
+		if strings.EqualFold(filepath.Ext(path), ".ics") {
+			loc := ctx.Loc
+			if loc == nil {
+				loc = ctx.Now.Location()
+				if loc == nil {
+					loc = time.UTC
+				}
+			}
+			now := ctx.Now.In(loc)
+			vals, err := expr.DaysFromICS(string(data), now.AddDate(-1, 0, 0), now.AddDate(5, 0, 0))
+			if err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+			ctx.Cfg.DaysOff = append(ctx.Cfg.DaysOff, vals...)
+			continue
+		}
 		lines := strings.Split(string(data), "\n")
 		for i, rawLine := range lines {
 			lineNum := i + 1

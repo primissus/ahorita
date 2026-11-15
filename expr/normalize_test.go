@@ -608,3 +608,50 @@ func TestREADMESpanishBlock(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeRecurrenceVocab(t *testing.T) {
+	cases := []struct {
+		input    string
+		lang     Lang
+		wantKeys []string
+		wantLang Lang
+	}{
+		{"every monday", "", []string{"every", "monday"}, EN},
+		{"each weekday", "", []string{"every", "weekdaykw"}, EN},
+		{"every weekdays, to cron", "", []string{"every", "weekdaykw", ",", "to", "cron"}, EN},
+		{"to ics, to grid, explain", "", []string{"to", "ics", ",", "to", "grid", ",", "explain"}, EN},
+		{"cada lunes", "", []string{"every", "monday"}, ES},
+		{"todos los días de semana", "", []string{"every", "weekdaykw"}, ES},
+		{"todas las semanas", "", []string{"every", "week"}, ES},
+		{"a calendario, explicar", "", []string{"to", "grid", ",", "explain"}, ES},
+		{`cron "0 9 * * 1", explica`, "", []string{"cron", `0 9 * * 1`, ",", "explain"}, ES},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			toks := Normalize(Lex(tc.input), tc.lang)
+			if got := InputLang(toks); got != tc.wantLang {
+				t.Errorf("InputLang(%q) = %q, want %q", tc.input, got, tc.wantLang)
+			}
+			var got []string
+			for _, tok := range toks {
+				if tok.Kind == EOF {
+					continue
+				}
+				if tok.Key != "" {
+					got = append(got, tok.Key)
+				} else {
+					got = append(got, tok.Text)
+				}
+			}
+			if len(got) != len(tc.wantKeys) {
+				t.Fatalf("keys(%q) = %v, want %v", tc.input, got, tc.wantKeys)
+			}
+			for i := range got {
+				if got[i] != tc.wantKeys[i] {
+					t.Fatalf("keys(%q)[%d] = %q, want %q (all=%v)", tc.input, i, got[i], tc.wantKeys[i], got)
+				}
+			}
+		})
+	}
+}

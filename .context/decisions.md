@@ -302,6 +302,12 @@
 - **Rejected:** Silent UTC conversion; rejecting zone conversions on recurrences.
 - **Status:** current
 
+### 2026-11-15 · 7.8 Cron parsing and evaluation
+- **Decision:** Parse and evaluate 5-field cron expressions via `github.com/robfig/cron/v3` (`v3.0.1`).
+- **Why:** Provides standard 5-field cron parsing (`ParseStandard`), range/step/list/month/weekday validation, and timezone-aware `Schedule.Next` stepping in a small focused dependency. Dependency reason: complete cron bitmask/calendar field evaluation is error-prone to duplicate.
+- **Rejected:** A hand-written cron matcher.
+- **Status:** current
+
 ## GUI
 
 ### 2026-11-14 · 8.1 Kind of GUI

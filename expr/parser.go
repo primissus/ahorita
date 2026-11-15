@@ -12,6 +12,8 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	expr         = stage { ( "," | "|" | "to"-stage ) stage } ;
 	stage        = stage-body [ "inclusive" ] ;
 	stage-body   = to-stage
+	             | "explain"
+	             | "next" Number            (* take N occurrences *)
 	             | "@" zone
 	             | "in" zone                (* only when not dur / period / year / rel *)
 	             | zone                     (* bare zone stage *)
@@ -50,6 +52,8 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	             | "during" dur
 	             | "holidays" [ Word(2 letters) ] [ 4-digit-year ]
 	             | "starting" add-expr
+	             | "every" every-spec
+	             | "cron" String
 	             | "from" add-expr "to" add-expr
 	             | "between" add-expr "and" add-expr
 	             | "howmany" ( unit | weekday ) ( "between" add-expr "and" add-expr | "from" add-expr "to" add-expr ) ;
@@ -96,6 +100,10 @@ AST Node Op table (contract with the evaluator):
 	during        | -                       | dur
 	holidays      | 2-letter code or ""     | [year]
 	starting      | -                       | value
+	every         | -                       | schedule parts (num, unit, weekday, key, ord, month, clock)
+	cron          | 5 cron fields           | -
+	take          | count                   | -
+	explain       | -                       | -
 	span          | -                       | from, to
 	count         | -                       | unit | weekday, from, to
 	inclusive     | -                       | wrapped stage node
@@ -114,9 +122,12 @@ const (
 	bpMul    = 3 // *
 )
 
-// toKeys holds extra keyword targets allowed after a stage-level "to"
-// (populated by later plans, e.g. cron, ics, grid).
-var toKeys = map[string]bool{}
+// toKeys holds extra keyword targets allowed after a stage-level "to".
+var toKeys = map[string]bool{
+	"cron": true,
+	"ics":  true,
+	"grid": true,
+}
 
 // prefix maps canonical starting keywords to their prefix parser functions.
 // Later plans add entries in init().
@@ -153,6 +164,8 @@ func init() {
 	prefix["during"] = (*parser).parseDuring
 	prefix["holidays"] = (*parser).parseHolidays
 	prefix["starting"] = (*parser).parseStarting
+	prefix["every"] = (*parser).parseEvery
+	prefix["cron"] = (*parser).parseCron
 	prefix["from"] = (*parser).parseFromSpan
 	prefix["between"] = (*parser).parseBetweenSpan
 	prefix["howmany"] = (*parser).parseCount
@@ -263,6 +276,13 @@ func (p *parser) parseStageBody() (Node, error) {
 		switch tok.Key {
 		case "to":
 			return p.parseToStage()
+		case "explain":
+			p.next()
+			return Node{Op: "explain", Pos: tok.Pos}, nil
+		case "next":
+			if p.startsTakeStage() {
+				return p.parseTakeStage()
+			}
 		case "in":
 			if p.startsInZone() {
 				return p.parseInZoneStage()
@@ -1106,7 +1126,11 @@ func (p *parser) startsDur() bool {
 }
 
 func (p *parser) startsDayFirstMonth() bool {
-	tok := p.cur()
+	return p.startsDayFirstMonthAt(0)
+}
+
+func (p *parser) startsDayFirstMonthAt(offset int) bool {
+	tok := p.peek(offset)
 	var ok bool
 	switch tok.Kind {
 	case Number:
@@ -1117,11 +1141,11 @@ func (p *parser) startsDayFirstMonth() bool {
 	if !ok {
 		return false
 	}
-	next := p.peek(1)
+	next := p.peek(offset + 1)
 	if next.Kind == Word && isMonthKey(next.Key) {
 		return true
 	}
-	if next.Kind == Word && next.Key == "of" && p.peek(2).Kind == Word && isMonthKey(p.peek(2).Key) {
+	if next.Kind == Word && next.Key == "of" && p.peek(offset+2).Kind == Word && isMonthKey(p.peek(offset+2).Key) {
 		return true
 	}
 	return false
@@ -1305,4 +1329,197 @@ func allDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+func (p *parser) startsTakeStage() bool {
+	next := p.peek(1)
+	if next.Kind != Number || !allDigits(next.Text) {
+		return false
+	}
+	if p.startsDayFirstMonthAt(1) {
+		return false
+	}
+	after := p.peek(2)
+	if after.Kind == Word && (after.Key == "am" || after.Key == "pm" || isUnitKey(after.Key)) {
+		return false
+	}
+	return true
+}
+
+func (p *parser) parseTakeStage() (Node, error) {
+	nextTok := p.next()
+	numTok := p.next()
+	return Node{Op: "take", Pos: nextTok.Pos, Text: numTok.Text}, nil
+}
+
+func (p *parser) parseCron() (Node, error) {
+	cronTok := p.next()
+	strTok := p.cur()
+	if strTok.Kind != String {
+		return Node{}, p.unexpectedErr(strTok, "a quoted 5-field cron string")
+	}
+	p.next()
+	fields := strings.Join(strings.Fields(strTok.Text), " ")
+	return Node{Op: "cron", Pos: cronTok.Pos, Text: fields}, nil
+}
+
+func (p *parser) parseEvery() (Node, error) {
+	everyTok := p.next()
+	var args []Node
+	tok := p.cur()
+
+	switch {
+	case tok.Kind == Word && tok.Key == "day" && p.peek(1).Kind == Op && p.peek(1).Text == "-" && p.peek(2).Kind == Word && p.peek(2).Key == "year":
+		dayTok := p.next()
+		p.next() // '-'
+		p.next() // 'year'
+		ordNode, err := p.parseOrd()
+		if err != nil {
+			return Node{}, err
+		}
+		args = []Node{{Op: "key", Pos: dayTok.Pos, Text: "dayyear"}, ordNode}
+
+	case tok.Kind == Number:
+		if !allDigits(tok.Text) {
+			return Node{}, p.everyErr(tok.Pos)
+		}
+		n, err := strconv.Atoi(tok.Text)
+		if err != nil || n < 1 {
+			return Node{}, &Error{Pos: tok.Pos, Msg: "interval must be at least 1"}
+		}
+		p.next()
+		uTok := p.cur()
+		if uTok.Kind != Word || !isEveryUnitKey(uTok.Key) {
+			return Node{}, p.everyErr(uTok.Pos)
+		}
+		p.next()
+		args = []Node{
+			{Op: "num", Pos: tok.Pos, Text: tok.Text},
+			{Op: "unit", Pos: uTok.Pos, Text: uTok.Key},
+		}
+
+	case p.startsOrd():
+		ordNode, err := p.parseOrd()
+		if err != nil {
+			return Node{}, err
+		}
+		wdTok := p.cur()
+		if wdTok.Kind != Word || !isWeekdayKey(wdTok.Key) {
+			return Node{}, p.everyErr(wdTok.Pos)
+		}
+		p.next()
+		args = []Node{ordNode, {Op: "weekday", Pos: wdTok.Pos, Text: wdTok.Key}}
+
+	case tok.Kind == Word && isWeekdayKey(tok.Key):
+		p.next()
+		args = []Node{{Op: "weekday", Pos: tok.Pos, Text: tok.Key}}
+
+	case tok.Kind == Word && tok.Key == "weekdaykw":
+		p.next()
+		args = []Node{{Op: "key", Pos: tok.Pos, Text: "weekdaykw"}}
+		if p.startsOrd() {
+			ordNode, err := p.parseOrd()
+			if err != nil {
+				return Node{}, err
+			}
+			args = append(args, ordNode)
+		}
+
+	case tok.Kind == Word && isEveryUnitKey(tok.Key):
+		p.next()
+		uNode := Node{Op: "unit", Pos: tok.Pos, Text: tok.Key}
+		switch tok.Key {
+		case "day", "month":
+			if p.startsOrd() {
+				ordNode, err := p.parseOrd()
+				if err != nil {
+					return Node{}, err
+				}
+				args = []Node{uNode, ordNode}
+			} else {
+				args = []Node{uNode}
+			}
+		case "year":
+			switch {
+			case p.cur().Kind == Word && isMonthKey(p.cur().Key):
+				m, err := p.parseMonthFirst(false)
+				if err != nil {
+					return Node{}, err
+				}
+				if len(m.Args) != 1 || m.Args[0].Op != "num" {
+					return Node{}, p.everyErr(m.Pos)
+				}
+				args = []Node{uNode, m}
+			case p.startsDayFirstMonth():
+				m, err := p.parseDayFirstMonth(false)
+				if err != nil {
+					return Node{}, err
+				}
+				if len(m.Args) != 1 || m.Args[0].Op != "num" {
+					return Node{}, p.everyErr(m.Pos)
+				}
+				args = []Node{uNode, m}
+			default:
+				args = []Node{uNode}
+			}
+		default:
+			args = []Node{uNode}
+		}
+
+	default:
+		return Node{}, p.everyErr(tok.Pos)
+	}
+
+	if p.startsClock() {
+		clk, err := p.parseClock()
+		if err != nil {
+			return Node{}, err
+		}
+		args = append(args, clk)
+	}
+
+	return Node{Op: "every", Pos: everyTok.Pos, Args: args}, nil
+}
+
+func (p *parser) everyErr(pos int) error {
+	return &Error{
+		Pos: pos,
+		Msg: `invalid every schedule (expected e.g. "every monday", "every 2 days", "every month 15th", "every 2nd monday", "every weekday", "every year aug 20")`,
+	}
+}
+
+func (p *parser) startsOrd() bool {
+	tok := p.cur()
+	if tok.Kind == Quantity && tok.Key == "ordinal" && allDigits(tok.Num) {
+		return true
+	}
+	return tok.Kind == Word && (tok.Key == "1st" || tok.Key == "2nd" || tok.Key == "3rd" || tok.Key == "4th" || tok.Key == "5th")
+}
+
+func (p *parser) parseOrd() (Node, error) {
+	tok := p.cur()
+	var num string
+	switch {
+	case tok.Kind == Quantity && tok.Key == "ordinal" && allDigits(tok.Num):
+		num = tok.Num
+	case tok.Kind == Word && (tok.Key == "1st" || tok.Key == "2nd" || tok.Key == "3rd" || tok.Key == "4th" || tok.Key == "5th"):
+		num = tok.Key[:1]
+	default:
+		return Node{}, p.everyErr(tok.Pos)
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil || n < 1 {
+		return Node{}, &Error{Pos: tok.Pos, Msg: "ordinal must be at least 1"}
+	}
+	p.next()
+	return Node{Op: "ord", Pos: tok.Pos, Text: num}, nil
+}
+
+func isEveryUnitKey(key string) bool {
+	switch key {
+	case "minute", "hour", "day", "week", "month", "year":
+		return true
+	default:
+		return false
+	}
 }

@@ -132,6 +132,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 				fmt.Fprintf(stderr, "%s  →  %s\n", st.Stage, st.Value)
 			}
 		}
+		if res.Note != "" {
+			fmt.Fprintf(stderr, "ahorita: %s\n", res.Note)
+		}
 		outLines = append(outLines, res.Text)
 	}
 

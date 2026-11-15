@@ -1,6 +1,9 @@
 package expr
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // String prints the expression in canonical English, with stages joined by " | ".
 func (e Expr) String() string {
@@ -14,8 +17,35 @@ func (e Expr) String() string {
 // String prints the node in canonical English.
 func (n Node) String() string {
 	switch n.Op {
-	case "date", "datetime", "clock", "slash", "num", "year", "weekday", "key":
+	case "date", "datetime", "clock", "slash", "num", "year", "weekday":
 		return n.Text
+	case "key":
+		switch n.Text {
+		case "weekdaykw":
+			return "weekday"
+		case "dayyear":
+			return "day-year"
+		default:
+			return n.Text
+		}
+	case "ord":
+		return printOrdinal(n.Text)
+	case "every":
+		if len(n.Args) == 0 {
+			return "every"
+		}
+		parts := make([]string, 1, 1+len(n.Args))
+		parts[0] = "every"
+		for _, arg := range n.Args {
+			parts = append(parts, arg.String())
+		}
+		return strings.Join(parts, " ")
+	case "take":
+		return "next " + n.Text
+	case "explain":
+		return "explain"
+	case "cron":
+		return "cron " + strconv.Quote(n.Text)
 	case "unix":
 		return "@" + n.Text
 	case "now", "today", "yesterday", "tomorrow":
@@ -239,4 +269,24 @@ func printZone(text string) string {
 		return `"` + text + `"`
 	}
 	return text
+}
+
+func printOrdinal(s string) string {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return s
+	}
+	if mod100 := n % 100; mod100 >= 11 && mod100 <= 13 {
+		return s + "th"
+	}
+	switch n % 10 {
+	case 1:
+		return s + "st"
+	case 2:
+		return s + "nd"
+	case 3:
+		return s + "rd"
+	default:
+		return s + "th"
+	}
 }

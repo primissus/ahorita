@@ -196,9 +196,11 @@ func TestValueString(t *testing.T) {
 			name: "recurrence",
 			val: Value{
 				Kind: KRecurrence,
-				Str:  "FREQ=WEEKLY;BYDAY=MO",
+				T:    time.Date(2026, 11, 14, 14, 30, 0, 0, mx),
+				Days: true,
+				Str:  "DTSTART;TZID=America/Mexico_City:20261114T000000\nRRULE:FREQ=WEEKLY;BYDAY=MO",
 			},
-			want: "FREQ=WEEKLY;BYDAY=MO",
+			want: "2026-11-16\n2026-11-23\n2026-11-30\n2026-12-07\n2026-12-14",
 		},
 	}
 

@@ -16,7 +16,7 @@ Two front ends, one engine:
 - **CLI**: fast, scriptable, pipe-friendly. Meant to be dropped into shell snippets and text expanders. This is v1.
 - **GUI**: a web calculator with buttons and date pickers for the same operations. *(planned, after the CLI)*
 
-> Status: the v1 engine and CLI work (arithmetic, relative dates, ranges, timezones, business days and holidays, display formats, English and Spanish). Still missing: recurrence and cron ([plan 10](plans/plan-10-recurrence-cron.md)), and the web GUI ([plan 11](plans/plan-11-gui.md)). The build plan is in [`plans/`](plans/README.md).
+> Status: the v1 engine and CLI work (arithmetic, relative dates, ranges, timezones, business days and holidays, recurrence, cron, `.ics` calendars, month grids, display formats, English and Spanish). Still missing: the web GUI ([plan 11](plans/plan-11-gui.md)). The build plan is in [`plans/`](plans/README.md).
 
 ## Usage
 
@@ -27,6 +27,7 @@ ahorita -t date next month    # flags go before the expression
 ahorita -- -06:00             # use -- before expressions starting with -
 ahorita "today | end of day"  # quote | and * in a shell; commas don't need quotes
 printf "today\ntomorrow\n" | ahorita  # evaluates non-empty lines from stdin
+ahorita -o standup.ics 'every monday 9am, to ics'
 ```
 
 - **Flags before the expression:** flag parsing stops at the first non-flag argument, so `ahorita now + 2d -t date` treats `-t date` as part of the expression. Put flags first (`ahorita -t date now + 2d`).
@@ -64,7 +65,7 @@ Precedence is **flag > environment variable > config file > default**.
 - Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
 - `AHORITA_CONFIG` overrides the config file path (errors if missing). Standard `TZ`, `LC_ALL`, and `LANG` (values starting with `es` default to Spanish) are also honored.
 - Default config file path: `$XDG_CONFIG_HOME/ahorita/config.toml`, or `~/.config/ahorita/config.toml`. Missing default files are ignored.
-- **Days-off files (`--calendar`):** plain text with one ahorita expression per line evaluating to a date (`2026-11-02`, `next friday`) or a whole-day span (`2026-12-24 .. 2027-01-02`). Blank lines and `#` comments (full-line or inline) are ignored. Passing `--calendar` on the CLI overrides `AHORITA_CALENDAR` and `calendar` in config.
+- **Days-off files (`--calendar`):** plain text with one ahorita expression per line evaluating to a date (`2026-11-02`, `next friday`) or a whole-day span (`2026-12-24 .. 2027-01-02`), or an `.ics` file (all-day events and RRULEs within 1 year before to 5 years after `now`). Blank lines and `#` comments (full-line or inline) are ignored in text files. Passing `--calendar` on the CLI overrides `AHORITA_CALENDAR` and `calendar` in config.
 
 Sample `~/.config/ahorita/config.toml`:
 
@@ -178,9 +179,25 @@ how many <unit> between <a> and <b>
 **Recurrence & cron**
 ```
 every monday
+every monday 9am
+every 2 days
+every 2 weeks
+every 90 minutes
+every weekday
 every day 2nd
+every month 15th
+every weekday 2nd
+every day-year 2nd
+every 2nd monday
+every year aug 20
+…, next <n>
 …, to cron
+…, to ics
+…, to grid
+cron "0 9 * * 1,3"
+…, explain
 ```
+By default `every …` and `cron "…"` list the next 5 occurrences; `next N` takes 1–1000. Export directly to a file with `ahorita -o standup.ics 'every monday 9am, to ics'`.
 
 **Timezones**
 ```

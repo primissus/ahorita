@@ -158,6 +158,16 @@ var vocabEN = map[string]string{
 	"fourth": "4th",
 	"fifth":  "5th",
 
+	// Recurrence & cron
+	"every":    "every",
+	"each":     "every",
+	"cron":     "cron",
+	"ics":      "ics",
+	"grid":     "grid",
+	"explain":  "explain",
+	"weekday":  "weekdaykw",
+	"weekdays": "weekdaykw",
+
 	// Fillers
 	"on":  "",
 	"the": "",

@@ -20,6 +20,7 @@ type Result struct {
 	Unix    *int64       `json:"unix,omitempty"`  // dates and date-times
 	Start   string       `json:"start,omitempty"` // spans, and durations that remember their ends
 	End     string       `json:"end,omitempty"`
+	Note    string       `json:"note,omitempty"`
 	Explain []ResultStep `json:"explain,omitempty"`
 	Error   *Error       `json:"error,omitempty"`
 }
@@ -45,6 +46,7 @@ func Run(input string, ctx Context, o Options, explain bool) Result {
 	res.Kind = resultKind(v.Kind)
 	res.Text = text
 	res.ISO = v.String()
+	res.Note = v.Note
 
 	switch v.Kind {
 	case KDate:

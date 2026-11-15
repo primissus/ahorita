@@ -42,6 +42,7 @@ type Value struct {
 	Local   bool      // typed without a zone, so @ / in may still reinterpret it
 	Items   []Value   // KList
 	Str     string    // KText, KRecurrence
+	Note    string    // non-fatal warning (e.g. cron weekday/DST shift across zones)
 	Lang    Lang      // language of the input; set by Eval on the final value
 }
 
@@ -77,8 +78,10 @@ func (v Value) String() string {
 			lines[i] = s
 		}
 		return strings.Join(lines, "\n")
-	case KText, KRecurrence:
+	case KText:
 		return v.Str
+	case KRecurrence:
+		return recurString(v)
 	default:
 		return ""
 	}

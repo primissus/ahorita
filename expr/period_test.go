@@ -333,7 +333,7 @@ func TestCount(t *testing.T) {
 		_, err := ev.evalTo(Node{
 			Op:   "to",
 			Pos:  0,
-			Args: []Node{{Op: "key", Pos: 3, Text: "cron"}},
+			Args: []Node{{Op: "key", Pos: 3, Text: "bogus"}},
 		}, Value{Kind: KRecurrence}, false)
 		if err == nil || !strings.Contains(err.Error(), "aren't available yet") {
 			t.Fatalf("evalTo key error = %v, want 'aren't available yet'", err)

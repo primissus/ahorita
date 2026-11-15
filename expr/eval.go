@@ -33,10 +33,11 @@ func Explain(input string, ctx Context) ([]Step, error) {
 }
 
 type evaluator struct {
-	ctx     Context
-	loc     *time.Location
-	cfgLang Lang
-	resLang Lang
+	ctx         Context
+	loc         *time.Location
+	cfgLang     Lang
+	resLang     Lang
+	priorStages []string
 }
 
 func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
@@ -91,8 +92,10 @@ func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
 			return nil, "", err
 		}
 		next.Lang = resLang
+		stageText := st.String()
+		ev.priorStages = append(ev.priorStages, stageText)
 		steps = append(steps, Step{
-			Text:  st.String(),
+			Text:  stageText,
 			Value: next,
 		})
 		cur = next
@@ -278,7 +281,8 @@ func isValueOp(op string) bool {
 	switch op {
 	case "date", "datetime", "clock", "slash", "unix",
 		"now", "today", "yesterday", "tomorrow",
-		"dur", "num", "ago", "in", "span", "count", "during":
+		"dur", "num", "ago", "in", "span", "count", "during",
+		"every", "cron":
 		return true
 	default:
 		return false
@@ -504,6 +508,18 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 
 	case "starting":
 		return ev.evalStarting(n, in)
+
+	case "every":
+		return ev.evalEvery(n)
+
+	case "cron":
+		return ev.evalCron(n)
+
+	case "take":
+		return ev.evalTake(n, in)
+
+	case "explain":
+		return ev.evalExplain(n, in)
 
 	case "count":
 		return ev.evalCount(n, in, false)
@@ -902,6 +918,8 @@ func convertToZone(pos int, v Value, loc *time.Location, ev *evaluator) (Value, 
 			Days:  false,
 			Local: false,
 		}, nil
+	case KRecurrence:
+		return convertRecurrenceToZone(pos, v, loc)
 	default:
 		return Value{}, &Error{
 			Pos: pos,
@@ -951,6 +969,8 @@ func interpretInZone(pos int, v Value, loc *time.Location, ev *evaluator) (Value
 			Days:  v.Days,
 			Local: false,
 		}, nil
+	case KRecurrence:
+		return interpretRecurrenceInZone(pos, v, loc, ev)
 	default:
 		return Value{}, &Error{
 			Pos: pos,

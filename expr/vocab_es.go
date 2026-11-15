@@ -159,6 +159,18 @@ var vocabES = map[string]string{
 	"quinto":  "5th",
 	"quinta":  "5th",
 
+	// Recurrence & cron
+	"cada":           "every",
+	"todos los":      "every",
+	"todas las":      "every",
+	"cron":           "cron",
+	"ics":            "ics",
+	"calendario":     "grid",
+	"explica":        "explain",
+	"explicar":       "explain",
+	"dia de semana":  "weekdaykw",
+	"dias de semana": "weekdaykw",
+
 	// Fillers
 	"el":    "",
 	"la":    "",

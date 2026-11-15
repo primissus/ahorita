@@ -922,7 +922,16 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 	target := n.Args[0]
 	switch target.Op {
 	case "key":
-		return Value{}, &Error{Pos: target.Pos, Msg: fmt.Sprintf("%q aren't available yet", target.Text)}
+		switch target.Text {
+		case "cron":
+			return ev.evalToCron(n.Pos, in)
+		case "ics":
+			return ev.evalToICS(n.Pos, in)
+		case "grid":
+			return ev.evalToGrid(n.Pos, in)
+		default:
+			return Value{}, &Error{Pos: target.Pos, Msg: fmt.Sprintf("%q aren't available yet", target.Text)}
+		}
 	case "unit":
 		switch in.Kind {
 		case KSpan:
