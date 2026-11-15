@@ -1,0 +1,139 @@
+package expr
+
+// vocabEN maps canonical English lowercase surface forms (single words or
+// space-joined multi-word phrases) to canonical keys.
+// An empty value marks a filler word that Normalize drops.
+var vocabEN = map[string]string{
+	// Values
+	"now":       "now",
+	"today":     "today",
+	"yesterday": "yesterday",
+	"tomorrow":  "tomorrow",
+
+	// Relative
+	"last":    "last",
+	"past":    "last",
+	"next":    "next",
+	"this":    "this",
+	"ago":     "ago",
+	"in":      "in",
+	"closest": "closest",
+
+	// Boundaries
+	"start": "start",
+	"end":   "end",
+	"of":    "of",
+
+	// Units
+	"second":   "second",
+	"seconds":  "second",
+	"sec":      "second",
+	"secs":     "second",
+	"minute":   "minute",
+	"minutes":  "minute",
+	"min":      "minute",
+	"mins":     "minute",
+	"hour":     "hour",
+	"hours":    "hour",
+	"hr":       "hour",
+	"hrs":      "hour",
+	"day":      "day",
+	"days":     "day",
+	"week":     "week",
+	"weeks":    "week",
+	"month":    "month",
+	"months":   "month",
+	"mo":       "month",
+	"quarter":  "quarter",
+	"quarters": "quarter",
+	"half":     "half",
+	"halves":   "half",
+	"year":     "year",
+	"years":    "year",
+	"yr":       "year",
+	"yrs":      "year",
+
+	// Compound units
+	"work week":     "workweek",
+	"business day":  "businessday",
+	"business days": "businessday",
+
+	// Weekdays
+	"monday":     "monday",
+	"mondays":    "monday",
+	"mon":        "monday",
+	"tuesday":    "tuesday",
+	"tuesdays":   "tuesday",
+	"tue":        "tuesday",
+	"wednesday":  "wednesday",
+	"wednesdays": "wednesday",
+	"wed":        "wednesday",
+	"thursday":   "thursday",
+	"thursdays":  "thursday",
+	"thu":        "thursday",
+	"friday":     "friday",
+	"fridays":    "friday",
+	"fri":        "friday",
+	"saturday":   "saturday",
+	"saturdays":  "saturday",
+	"sat":        "saturday",
+	"sunday":     "sunday",
+	"sundays":    "sunday",
+	"sun":        "sunday",
+
+	// Months
+	"january":   "january",
+	"jan":       "january",
+	"february":  "february",
+	"feb":       "february",
+	"march":     "march",
+	"mar":       "march",
+	"april":     "april",
+	"apr":       "april",
+	"may":       "may",
+	"june":      "june",
+	"jun":       "june",
+	"july":      "july",
+	"jul":       "july",
+	"august":    "august",
+	"aug":       "august",
+	"september": "september",
+	"sep":       "september",
+	"sept":      "september",
+	"october":   "october",
+	"oct":       "october",
+	"november":  "november",
+	"nov":       "november",
+	"december":  "december",
+	"dec":       "december",
+
+	// Periods
+	"q1": "q1",
+	"q2": "q2",
+	"q3": "q3",
+	"q4": "q4",
+	"h1": "h1",
+	"h2": "h2",
+
+	// Spans, counting
+	"from":      "from",
+	"to":        "to",
+	"between":   "between",
+	"and":       "and",
+	"during":    "during",
+	"starting":  "starting",
+	"inclusive": "inclusive",
+	"how many":  "howmany",
+
+	// Time of day
+	"am": "am",
+	"pm": "pm",
+
+	// Zones
+	"utc": "utc",
+
+	// Fillers
+	"on":  "",
+	"the": "",
+	"at":  "",
+}
