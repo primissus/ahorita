@@ -1,0 +1,94 @@
+package expr
+
+import (
+	"testing"
+	"time"
+	_ "time/tzdata"
+)
+
+func refCtx(t *testing.T) Context {
+	t.Helper()
+	loc, err := time.LoadLocation("America/Mexico_City")
+	if err != nil {
+		t.Fatalf("load reference location: %v", err)
+	}
+	now := time.Date(2026, time.November, 14, 14, 30, 0, 0, loc)
+	return Context{
+		Now: now,
+		Loc: loc,
+		Cfg: DefaultConfig(),
+	}
+}
+
+func TestCases(t *testing.T) {
+	ctx := refCtx(t)
+
+	cases := []struct {
+		id    string
+		input string
+		want  string
+		skip  string
+	}{
+		{id: "1", input: "today", want: "2026-11-14"},
+		{id: "2", input: "now - 1d", want: "2026-11-13T14:30:00-06:00"},
+		{id: "3", input: "2026-06-02 + 2d", want: "2026-06-04"},
+		{id: "4", input: "2026-06-02 - 1h", want: "2026-06-01T23:00:00-06:00"},
+		{id: "5", input: "yesterday", want: "2026-11-13"},
+		{id: "6", input: "2d ago", want: "2026-11-12T14:30:00-06:00"},
+		{id: "7", input: "last week", want: "2026-11-02 → 2026-11-08"},
+		{id: "8", input: "today - 1w", want: "2026-11-07"},
+		{id: "9", input: "closest monday", want: "2026-11-16"},
+		{id: "10", input: "today - 1w, monday", want: "2026-11-02"},
+		{id: "11", input: "past monday", want: "2026-11-09"},
+		{id: "12", input: "end of day, today", want: "2026-11-14T23:59:59-06:00"},
+		{id: "13", input: "end of week, this week", want: "2026-11-15T23:59:59-06:00"},
+		{id: "14", input: "next month", want: "2026-12-01 → 2026-12-31"},
+		{id: "15", input: "in 3 months", want: "2027-02-14T14:30:00-06:00"},
+		{id: "16", input: "in Q3", want: "2026-07-01 → 2026-09-30"},
+		{id: "17", input: "2nd week, h2", want: "2026-07-06 → 2026-07-12"},
+		{id: "17b", input: "week 2", want: "2026-01-05 → 2026-01-11"},
+		{id: "18", input: "on aug 20th", want: "2026-08-20"},
+		{id: "19", input: "on sept, past year", want: "2025-09-01 → 2025-09-30"},
+		{id: "20", input: "2h", want: "2h"},
+		{id: "20b", input: "90m", want: "1h 30m"},
+		{id: "21", input: "during 2 days", want: "2026-11-14 → 2026-11-15"},
+		{id: "22", input: "during 6 weeks, starting next monday", want: "2026-11-16 → 2026-12-27"},
+		{id: "23", input: "every monday", skip: "plan 10"},
+		{id: "24", input: "every day 2nd", skip: "plan 10"},
+		{id: "25", input: "every monday, to cron", want: "0 0 * * 1", skip: "plan 10"},
+		{id: "26", input: "2026-12-24 - 2026-11-14", want: "40d"},
+		{id: "26b", input: "2026-11-14 - 2026-12-24", want: "-40d"},
+		{id: "27", input: "how many days between 2026-11-16 and 2026-11-20", want: "4"},
+		{id: "27a", input: "how many days between 2026-11-16 and 2026-11-20 inclusive", want: "5"},
+		{id: "27b", input: "how many mondays between today and 2026-12-31", want: "7"},
+		{id: "28", input: "2026-11-14 14:30 in Tokyo", want: "2026-11-14T14:30:00+09:00", skip: "plan 6"},
+		{id: "28b", input: "now in Tokyo", want: "2026-11-15T05:30:00+09:00", skip: "plan 6"},
+		{id: "28c", input: "2pm @ Tokyo", want: "2026-11-14T14:00:00+09:00", skip: "plan 6"},
+		{id: "29", input: "2026-11-14 14:30, America/New_York", want: "2026-11-14T14:30:00-05:00"},
+		{id: "30", input: "now to Asia/Tokyo", want: "2026-11-15T05:30:00+09:00"},
+		{id: "31", input: "now to UTC", want: "2026-11-14T20:30:00Z"},
+		{id: "32", input: "2026-11-20 - 2026-11-16, to business days", want: "4", skip: "plan 9"},
+		{id: "32a", input: "2026-11-20 - 2026-11-16, to business days inclusive", want: "4", skip: "plan 9"},
+		{id: "33", input: "2026-11-14, next business day", want: "2026-11-17", skip: "plan 9"},
+		{id: "33b", input: "2026-11-17, next business day", want: "2026-11-18", skip: "plan 9"},
+		{id: "34", input: "2026-11-13 + 3 business days", want: "2026-11-19", skip: "plan 9"},
+		{id: "34b", input: "2026-11-18 - 2 business days", want: "2026-11-13", skip: "plan 9"},
+		{id: "34c", input: "2026-11-14 + 1 business day", want: "2026-11-17", skip: "plan 9"},
+		{id: "35", input: "now + 2days", want: "2026-11-16T14:30:00-06:00"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.id+"_"+tc.input, func(t *testing.T) {
+			if tc.skip != "" {
+				t.Skip(tc.skip)
+			}
+			got, err := Eval(tc.input, ctx)
+			if err != nil {
+				t.Fatalf("case %s (%q) unexpected error: %v", tc.id, tc.input, err)
+			}
+			if got.String() != tc.want {
+				t.Fatalf("case %s (%q) = %q, want %q", tc.id, tc.input, got.String(), tc.want)
+			}
+		})
+	}
+}
