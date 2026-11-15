@@ -22,7 +22,7 @@
 - **Decision:** Hand-written lexer and recursive-descent parser (Pratt-style for operators). Pipeline: lex → normalize words → parse → evaluate → format.
 - **Why:** The user accepted either option and asked for the faster MVP and the easier maintenance. By hand the v1 grammar is a few hundred lines of plain Go, with no generator step, exact error positions, and "expected next" for free. Two keyword languages and loose word order fit generator grammars poorly.
 - **Rejected:** goyacc, participle. If a library is ever wanted, participle (no code generation).
-- **Status:** proposed (confirm in C.1)
+- **Status:** current (C.1 ★ accepted in chat 2026-11-15)
 
 ### 2026-11-14 · 1.2 v1 scope
 - **Decision:** v1 = engine + CLI covering arithmetic, relative dates, ranges, timezones and display formats. Then business days + holidays, then recurrence + cron, then the GUI.
@@ -150,9 +150,29 @@
 
 ## Timezones
 
-### Batch 4 (4.1–4.4) Place names, abbreviations, default zone, tz data
-- **Decision:** [PENDING: blank in QUESTIONS.md. Blocks plan 6.]
-- **Status:** open
+### 2026-11-15 · 4.1 Turning a place name into a timezone
+- **Decision:** Match the city part of standard IANA zone names (`Tokyo` → `Asia/Tokyo`), plus a small alias list (`CDMX`, `NYC`, `SF`, etc.).
+- **Why:** Fast, offline, zero heavy dependencies; covers major cities and common shorthand. Answered in chat (★ accepted).
+- **Rejected:** Embedding GeoNames; online geocoding.
+- **Status:** current
+
+### 2026-11-15 · 4.2 Timezone abbreviations
+- **Decision:** Accept a fixed list of unambiguous abbreviations (`JST`, `EST`, `PST`, etc.) as fixed offsets. Ambiguous abbreviations (`CST`, `CDT`, `IST`, `BST`, `AST`) return an error listing candidates.
+- **Why:** Prevents silent misinterpretation of `CST` or `IST` across regions. Answered in chat (★ accepted).
+- **Rejected:** Config mapping per abbreviation; rejecting all abbreviations.
+- **Status:** current
+
+### 2026-11-15 · 4.3 Default zone
+- **Decision:** Use the system's local timezone by default, overridable with `TZ`, `AHORITA_TZ`, config `tz`, or `--tz`.
+- **Why:** Matches standard CLI expectations while remaining deterministic when overridden or injected. Answered in chat (★ accepted).
+- **Rejected:** Always defaulting to UTC.
+- **Status:** current
+
+### 2026-11-15 · 4.4 Timezone data
+- **Decision:** Embed Go's timezone database (`_ "time/tzdata"`).
+- **Why:** Ensures consistent timezone resolution across OSes and WebAssembly (about 450 KB binary cost). Answered in chat (★ accepted).
+- **Rejected:** Relying solely on OS zoneinfo files.
+- **Status:** current
 
 ## CLI
 
@@ -276,9 +296,11 @@
 - **Rejected:** Approximations with a warning.
 - **Status:** current
 
-### 7.7 Cron and timezones
-- **Decision:** [PENDING: blank in QUESTIONS.md. Blocks the UTC-conversion step of plan 10.]
-- **Status:** open
+### 2026-11-15 · 7.7 Cron and timezones
+- **Decision:** Output cron in the given (or local) zone. When converting a recurrence to another zone (`to <zone>`) and then `to cron`, shift the time/weekday into that zone and attach a warning note if the weekday shifts or DST differs between the zones.
+- **Why:** Keeps local schedules accurate by default while making UTC/cross-zone drift explicit. Answered in chat (★ accepted).
+- **Rejected:** Silent UTC conversion; rejecting zone conversions on recurrences.
+- **Status:** current
 
 ## GUI
 
@@ -291,6 +313,8 @@
 - **Decision:** Web first.
 - **Status:** current
 
-### 2026-11-14 · 8.3 GUI framework
-- **Decision:** [PENDING: decide later. Candidates from the user: React, Kotlin Multiplatform. Recommendation in C.12.]
-- **Status:** open
+### 2026-11-15 · 8.3 GUI framework
+- **Decision:** React + TypeScript, with the Go engine compiled to WebAssembly (`GOOS=js GOARCH=wasm`).
+- **Why:** Calls the exact same `expr.Run` engine in the browser, preserving the one-engine rule with no duplicate date logic (C.12 ★ accepted in chat).
+- **Rejected:** Kotlin Multiplatform (cannot call Go directly without WebAssembly or duplicating the engine).
+- **Status:** current

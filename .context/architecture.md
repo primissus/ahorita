@@ -6,7 +6,7 @@ A date/time expression engine in Go that reads English and Spanish. A CLI (v1) a
 ## Stack
 - Language / runtime: Go (local toolchain 1.27)
 - CLI: stdlib `flag`
-- GUI: web first, a button calculator with date pickers. Framework [PENDING: C.12, React + WASM vs Kotlin Multiplatform]
+- GUI: web first, a button calculator with date pickers. React + TypeScript with Go engine compiled to WebAssembly (`GOOS=js GOARCH=wasm`).
 - Database: none
 - Dependencies (planned, added by the plan that needs them): `github.com/rickar/cal/v2` (holiday rules, plan 9), `github.com/teambition/rrule-go` (recurrence, plan 10)
 - External services: none

@@ -13,7 +13,7 @@
 - **Business day** → a day that isn't a weekend day (Saturday and Sunday by default), a holiday in the active country (MX by default), or one of the user's own days off.
 - **Strict mode** → `--strict`: any ambiguous input is an error instead of a best guess.
 - **Canonical keyword** → the English word the normalizer maps every synonym and Spanish word to (`pasado` → `last`).
-- **Lang** → the active language (`en` or `es`). Both vocabularies are always read [PENDING: F.1]; lang breaks ties and picks the output language.
+- **Lang** → the active language (`en` or `es`). Both vocabularies are always read; `lang` breaks ties and picks the output language.
 
 ## Main entities
 - **Instant** → a point in time with a timezone.
@@ -25,7 +25,7 @@
 - **Holiday calendar** → a set of non-working dates for a country.
 
 ## Unit letters
-Case-sensitive where it matters: `m` = minute, `M` = month. Others: `s`, `h`, `d`, `w`, `y`. [PENDING: C.4 for the full table]
+Case-sensitive where it matters: `m` = minute, `M` = month. Others: `s`, `h`, `d`, `w`, `q`, `y` (case-insensitive per C.4 ★).
 
 ## Acronyms & internal names
 - **Q1–Q4** → calendar quarters.

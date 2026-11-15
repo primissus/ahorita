@@ -20,4 +20,4 @@
 - What must always be tested: every grammar form in README "Expression examples", DST transitions, month-end arithmetic (Jan 31 + 1 month), leap years, timezone conversion.
 
 ## Commits
-- Format: conventional commits (`feat:`, `fix:`, `docs:` …). [PENDING: confirm]
+- Format: conventional commits (`feat:`, `fix:`, `docs:`, `test:`). Confirmed in chat 2026-11-15.
