@@ -12,13 +12,16 @@ A date/time expression engine in Go that reads English and Spanish. A CLI (v1) a
 - External services: none
 
 ## Folder map
-Currently exists: `go.mod`, `.gitignore`, `README.md`, `CLAUDE.md`, `CASES.md`, `QUESTIONS.md`, `QUESTIONS-2.md`, `.context/`, `plans/`, `expr/` (`token.go`, `lexer.go`, `lexer_test.go`, `normalize.go`, `normalize_test.go`, `vocab_en.go`, `vocab_es.go`, `ast.go`, `parser.go`, `parser_test.go`, `print.go`, `print_test.go`, `value.go`, `value_test.go`, `context.go`, `eval.go`, `eval_test.go`, `arith.go`, `arith_test.go`, `period.go`, `period_test.go`, `format.go`, `format_test.go`, `pattern.go`, `pattern_test.go`, `result.go`, `result_test.go`, `zone.go`, `zones_data.go` [generated], `zones_gen.go`, `zone_test.go`, `business.go`, `business_test.go`, `recur.go`, `recur_test.go`, `cron.go`, `cron_test.go`, `calendar.go`, `calendar_test.go`, `cases_test.go`, `readme_test.go`, `spanish_test.go`, `edge_test.go`, `strict_test.go`), and `cmd/ahorita/` (`config.go`, `config_test.go`, `main.go`, `main_test.go`). Each plan in `plans/` creates only what it needs. Target:
+Currently exists: `go.mod`, `.gitignore`, `README.md`, `CLAUDE.md`, `CASES.md`, `QUESTIONS.md`, `QUESTIONS-2.md`, `.context/`, `plans/`, `expr/` (`token.go`, `lexer.go`, `lexer_test.go`, `normalize.go`, `normalize_test.go`, `vocab_en.go`, `vocab_es.go`, `ast.go`, `parser.go`, `parser_test.go`, `print.go`, `print_test.go`, `value.go`, `value_test.go`, `context.go`, `eval.go`, `eval_test.go`, `arith.go`, `arith_test.go`, `period.go`, `period_test.go`, `format.go`, `format_test.go`, `pattern.go`, `pattern_test.go`, `result.go`, `result_test.go`, `zone.go`, `zones_data.go` [generated], `zones_gen.go`, `zone_test.go`, `business.go`, `business_test.go`, `recur.go`, `recur_test.go`, `cron.go`, `cron_test.go`, `calendar.go`, `calendar_test.go`, `cases_test.go`, `readme_test.go`, `spanish_test.go`, `edge_test.go`, `strict_test.go`), `internal/settings/` (`settings.go`, `settings_test.go`), `cmd/ahorita/` (`config.go`, `config_test.go`, `main.go`, `main_test.go`), `cmd/wasm/` (`bridge.go`, `main.go`, `main_stub.go`, `main_test.go`), and `web/` (`DESIGN.md`, `build-wasm.sh`, `smoke.mjs`, `public/ahorita.wasm`, `public/wasm_exec.js` — Step 4+ React/Vite scaffold pending `web/DESIGN.md` approval). Each plan in `plans/` creates only what it needs. Target:
 
 ```
 go.mod
-expr/            the engine: one package, no I/O, no clock, no env
-cmd/ahorita/     the CLI: flags, env, config, stdin/stdout, clipboard
-plans/           build plans and their progress trackers
+expr/               the engine: one package, no I/O, no clock, no env
+internal/settings/  shared settings validation & days-off parsing (no file I/O)
+cmd/ahorita/        the CLI: flags, env, config, stdin/stdout, clipboard
+cmd/wasm/           the JS/WASM bridge exposing ahoritaRun(input, optionsJSON)
+web/                the web GUI (build-wasm.sh, smoke.mjs, DESIGN.md; React/Vite app pending approval)
+plans/              build plans and their progress trackers
 ```
 
 File-by-file ownership is in `plans/README.md`.

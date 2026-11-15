@@ -1,5 +1,7 @@
 .DS_Store
 /ahorita
+web/public/ahorita.wasm
+web/public/wasm_exec.js
 /*.md
 !/README.md
 !/CLAUDE.md
