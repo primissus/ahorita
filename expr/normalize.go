@@ -1,13 +1,15 @@
 package expr
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 const maxPhraseWords = 4
 
 // Normalize assigns canonical keywords (Key) to words and quantities,
-// merges multi-word phrases, and drops filler words.
+// merges multi-word phrases, sets Lang and Tie, and drops filler words.
 func Normalize(toks []Token, lang Lang) []Token {
-	_ = lang
 	out := make([]Token, 0, len(toks))
 
 	for i := 0; i < len(toks); {
@@ -32,14 +34,24 @@ func Normalize(toks []Token, lang Lang) []Token {
 
 			matched := false
 			for n := maxN; n >= 1; n-- {
-				phrase := joinWordsLower(toks[i : i+n])
-				if key, ok := vocabEN[phrase]; ok {
+				phrase := joinWordsFolded(toks[i : i+n])
+				if n == 3 {
+					if special, ok := resolveSpecialPhrase(phrase, toks, i); ok {
+						out = append(out, special...)
+						i += 3
+						matched = true
+						break
+					}
+				}
+				if key, tokLang, tie, ok := lookupPhrase(phrase, toks, i, out, lang); ok {
 					if key != "" {
 						out = append(out, Token{
 							Kind: Word,
 							Text: joinWordsRaw(toks[i : i+n]),
 							Pos:  tok.Pos,
 							Key:  key,
+							Lang: tokLang,
+							Tie:  tie,
 						})
 					}
 					i += n
@@ -54,7 +66,7 @@ func Normalize(toks []Token, lang Lang) []Token {
 			}
 
 		case Quantity:
-			tok.Key = quantityKey(tok.Unit)
+			tok.Key, tok.Lang = quantityKey(tok.Unit)
 			out = append(out, tok)
 			i++
 
@@ -67,13 +79,138 @@ func Normalize(toks []Token, lang Lang) []Token {
 	return out
 }
 
-func joinWordsLower(toks []Token) string {
+// InputLang returns the Lang of the first token that has one, or "".
+func InputLang(toks []Token) Lang {
+	for _, tok := range toks {
+		if tok.Lang != "" {
+			return tok.Lang
+		}
+	}
+	return ""
+}
+
+func fold(s string) string {
+	return strings.Map(func(r rune) rune {
+		r = unicode.ToLower(r)
+		switch r {
+		case 'á':
+			return 'a'
+		case 'é':
+			return 'e'
+		case 'í':
+			return 'i'
+		case 'ó':
+			return 'o'
+		case 'ú', 'ü':
+			return 'u'
+		case 'ñ':
+			return 'n'
+		default:
+			return r
+		}
+	}, s)
+}
+
+func resolveSpecialPhrase(phrase string, toks []Token, i int) ([]Token, bool) {
+	switch phrase {
+	case "fin de semana":
+		return []Token{
+			{Kind: Word, Text: toks[i].Text, Pos: toks[i].Pos, Key: "end", Lang: ES, Tie: true},
+			{Kind: Word, Text: toks[i+1].Text, Pos: toks[i+1].Pos, Key: "of", Lang: ES},
+			{Kind: Word, Text: toks[i+2].Text, Pos: toks[i+2].Pos, Key: "week", Lang: ES},
+		}, true
+	case "en la manana", "por la manana":
+		res := make([]Token, 3)
+		for k := 0; k < 3; k++ {
+			t := toks[i+k]
+			t.Key = ""
+			t.Lang = ""
+			t.Tie = false
+			res[k] = t
+		}
+		return res, true
+	default:
+		return nil, false
+	}
+}
+
+func lookupPhrase(phrase string, toks []Token, i int, out []Token, lang Lang) (string, Lang, bool, bool) {
+	switch phrase {
+	case "ago":
+		key, tokLang, tie := resolveAgo(toks, i, out, lang)
+		return key, tokLang, tie, true
+	case "second", "segundo", "segunda":
+		key, tokLang := resolveSecond(phrase, toks, i)
+		return key, tokLang, false, true
+	case "de":
+		return resolveDe(toks, i), ES, false, true
+	}
+
+	enKey, inEN := vocabEN[phrase]
+	esKey, inES := vocabES[phrase]
+	switch {
+	case inEN && inES:
+		if enKey == esKey {
+			return enKey, "", false, true
+		}
+		if lang == ES {
+			return esKey, ES, true, true
+		}
+		return enKey, EN, true, true
+	case inEN:
+		return enKey, EN, false, true
+	case inES:
+		return esKey, ES, false, true
+	default:
+		return "", "", false, false
+	}
+}
+
+func resolveAgo(toks []Token, i int, out []Token, lang Lang) (string, Lang, bool) {
+	if len(out) > 0 {
+		prev := out[len(out)-1]
+		if (prev.Kind == Quantity && prev.Key != "ordinal" && prev.Key != "am" && prev.Key != "pm") ||
+			(prev.Kind == Word && isUnitKey(prev.Key)) {
+			return "ago", EN, false
+		}
+		if prev.Kind == Number {
+			return "august", ES, false
+		}
+	}
+	if i+1 < len(toks) && toks[i+1].Kind == Number {
+		return "august", ES, false
+	}
+	if lang == ES {
+		return "august", ES, true
+	}
+	return "ago", EN, true
+}
+
+func resolveSecond(phrase string, toks []Token, i int) (string, Lang) {
+	tokLang := ES
+	if phrase == "second" {
+		tokLang = EN
+	}
+	if i > 0 && toks[i-1].Kind == Number {
+		return "second", tokLang
+	}
+	return "2nd", tokLang
+}
+
+func resolveDe(toks []Token, i int) string {
+	if i == 0 || (toks[i-1].Kind == Op && (toks[i-1].Text == "," || toks[i-1].Text == "|")) {
+		return "from"
+	}
+	return "of"
+}
+
+func joinWordsFolded(toks []Token) string {
 	if len(toks) == 1 {
-		return strings.ToLower(toks[0].Text)
+		return fold(toks[0].Text)
 	}
 	parts := make([]string, len(toks))
 	for i, t := range toks {
-		parts[i] = strings.ToLower(t.Text)
+		parts[i] = fold(t.Text)
 	}
 	return strings.Join(parts, " ")
 }
@@ -89,38 +226,78 @@ func joinWordsRaw(toks []Token) string {
 	return strings.Join(parts, " ")
 }
 
-func quantityKey(unit string) string {
+func quantityKey(unit string) (string, Lang) {
 	switch unit {
 	case "m":
-		return "minute"
+		return "minute", ""
 	case "M":
-		return "month"
+		return "month", ""
 	}
 
-	lower := strings.ToLower(unit)
-	switch lower {
+	folded := fold(unit)
+	switch folded {
 	case "s":
-		return "second"
+		return "second", ""
 	case "h":
-		return "hour"
+		return "hour", ""
 	case "d":
-		return "day"
+		return "day", ""
 	case "w":
-		return "week"
+		return "week", ""
 	case "q":
-		return "quarter"
+		return "quarter", ""
 	case "y":
-		return "year"
+		return "year", ""
 	case "am":
-		return "am"
+		return "am", ""
 	case "pm":
-		return "pm"
+		return "pm", ""
 	case "st", "nd", "rd", "th":
-		return "ordinal"
+		return "ordinal", EN
+	case "o", "a", "º", "ª", "er", "ro", "do", "da", "to", "ta":
+		return "ordinal", ES
 	}
 
-	if key, ok := vocabEN[lower]; ok {
-		return key
+	enKey, inEN := vocabEN[folded]
+	esKey, inES := vocabES[folded]
+	if inEN && !isDurationUnitKey(enKey) {
+		inEN = false
 	}
-	return ""
+	if inES && !isDurationUnitKey(esKey) {
+		inES = false
+	}
+	switch {
+	case inEN && inES:
+		if enKey == esKey {
+			return enKey, ""
+		}
+		return enKey, EN
+	case inEN:
+		return enKey, EN
+	case inES:
+		return esKey, ES
+	default:
+		return "", ""
+	}
+}
+
+func isUnitKey(key string) bool {
+	if isDurationUnitKey(key) {
+		return true
+	}
+	switch key {
+	case "workweek", "businessday":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDurationUnitKey(key string) bool {
+	switch key {
+	case "second", "minute", "hour", "day", "week", "month", "quarter", "half", "year":
+		return true
+	default:
+		return false
+	}
 }

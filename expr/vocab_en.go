@@ -11,18 +11,26 @@ var vocabEN = map[string]string{
 	"tomorrow":  "tomorrow",
 
 	// Relative
-	"last":    "last",
-	"past":    "last",
-	"next":    "next",
-	"this":    "this",
-	"ago":     "ago",
-	"in":      "in",
-	"closest": "closest",
+	"last":      "last",
+	"past":      "last",
+	"previous":  "last",
+	"prev":      "last",
+	"next":      "next",
+	"coming":    "next",
+	"following": "next",
+	"this":      "this",
+	"current":   "this",
+	"ago":       "ago",
+	"back":      "ago",
+	"in":        "in",
+	"closest":   "closest",
+	"nearest":   "closest",
 
 	// Boundaries
-	"start": "start",
-	"end":   "end",
-	"of":    "of",
+	"start":     "start",
+	"beginning": "start",
+	"end":       "end",
+	"of":        "of",
 
 	// Units
 	"second":   "second",
@@ -116,14 +124,20 @@ var vocabEN = map[string]string{
 	"h2": "h2",
 
 	// Spans, counting
-	"from":      "from",
-	"to":        "to",
-	"between":   "between",
-	"and":       "and",
-	"during":    "during",
-	"starting":  "starting",
-	"inclusive": "inclusive",
-	"how many":  "howmany",
+	"from":        "from",
+	"since":       "from",
+	"to":          "to",
+	"until":       "to",
+	"till":        "to",
+	"through":     "to",
+	"between":     "between",
+	"and":         "and",
+	"during":      "during",
+	"starting":    "starting",
+	"inclusive":   "inclusive",
+	"inclusively": "inclusive",
+	"including":   "inclusive",
+	"how many":    "howmany",
 
 	// Time of day
 	"am": "am",
@@ -131,6 +145,14 @@ var vocabEN = map[string]string{
 
 	// Zones
 	"utc": "utc",
+	"gmt": "utc",
+	"z":   "utc",
+
+	// Ordinals
+	"first":  "1st",
+	"third":  "3rd",
+	"fourth": "4th",
+	"fifth":  "5th",
 
 	// Fillers
 	"on":  "",
