@@ -38,10 +38,9 @@ Known domain traps and v1 gotchas caught during design and acceptance testing:
 - **Real cause:** stdlib `flag` stops at the first non-flag argument, and `-` is also the minus operator.
 - **Fix:** flags go before the expression. Intentional.
 
-## MX holiday rules in `rickar/cal`
-- **Happens when:** asking for Mexican public holidays.
-- **Real cause:** in v2.1.33 the `mx` package keeps Constitution Day on Feb 5 and Juárez's birthday on Mar 21 (the law moved both to Mondays), shifts weekend holidays to a weekday (Mexico doesn't), and marks Christmas as a bank holiday.
-- **Fix:** plan 9 defines the MX list itself from Ley Federal del Trabajo art. 74 and uses the library for other countries only.
+## MX holiday rules (implemented in `expr/business.go`)
+- **Why custom rules were needed:** in `github.com/rickar/cal/v2` v2.1.33, the upstream `mx` package keeps Constitution Day on Feb 5 and Juárez's birthday on Mar 21 (the law moved both to Mondays), shifts weekend holidays to a weekday (Mexico doesn't), and marks Christmas as a bank holiday.
+- **What was built (plan 9):** `expr/business.go` defines MX holidays directly from Ley Federal del Trabajo art. 74 (including the October 1 presidential inauguration every 6 years starting in 2024) with both English and Spanish names, and does not use `cal/v2/mx`. Election days (LFT art. 74, IX) have no fixed rule and can be supplied via a `--calendar` days-off file. All 46 other country packages in `rickar/cal/v2` that export a top-level `Holidays` list are wired and filtered by `ObservancePublic` (upstream `rickar/cal/v2` caveats remain in some countries: e.g., `GB` marks all bank holidays `ObservanceBank`, `IE`/`BR`/`PL`/`LT`/`NC` omit `Type` on some public holidays, `CA`/`NZ`/`ZA` mark Christmas/Boxing Day/Day of Goodwill `ObservanceBank`, `GR` names Jan 1 `"Xristougenna"`, and `AU` exposes only per-state slices rather than a national `Holidays` variable).
 
 ## Things that look broken but are intentional
 - `yesterday` has no time of day; `2d ago` does (decision 3.8).
@@ -56,5 +55,5 @@ Known domain traps and v1 gotchas caught during design and acceptance testing:
 
 ## Recurrence and cron keywords aren't recognized before plan 10
 - **Happens when:** evaluating `every monday`, `every day 2nd`, or `every monday, to cron` in v1.
-- **Real cause:** plan 3's parser left `every` and `cron` out of the keyword tables until plan 10, so those README examples fail with unknown-word or parse errors instead of `"aren't available yet"` (unlike business-day examples, which already parse and return `"business days aren't available yet"`).
+- **Real cause:** plan 3's parser left `every` and `cron` out of the keyword tables until plan 10, so those README examples fail with unknown-word or parse errors instead of `"aren't available yet"`.
 - **Fix:** tracked as 3 `BUG:` skips in `expr/readme_test.go` until plan 10 adds recurrence and cron syntax.

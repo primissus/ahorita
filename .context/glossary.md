@@ -22,7 +22,8 @@
 - **Duration** → calendar part (months, days) and fixed part (hours, minutes, seconds), kept apart. Calendar units (month, year, quarter) aren't fixed lengths.
 - **Span (range)** → start + end (from `last week`, `during 2 days`, `in Q3`, `2nd week`, `A .. B`).
 - **Recurrence** → a repeating rule (`every monday`, `every day 2nd`), stored as an RRULE. Can be converted to a cron expression.
-- **Holiday calendar** → a set of non-working dates for a country.
+- **Holiday calendar** → a set of non-working dates for a country (`MX` by default via LFT art. 74; other countries from `rickar/cal/v2`, or empty when `none`).
+- **Days-off file (`--calendar`)** → plain-text file of custom non-working dates or whole-day spans evaluated line-by-line with `expr.Eval` (ignoring blank lines and `#` comments).
 
 ## Unit letters
 Case-sensitive where it matters: `m` = minute, `M` = month. Others: `s`, `h`, `d`, `w`, `q`, `y` (case-insensitive per C.4 ★).

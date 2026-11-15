@@ -98,6 +98,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 		Loc: s.loc,
 		Cfg: s.cfg,
 	}
+	if err := loadDaysOff(s.calendars, e.readFile, &ctx); err != nil {
+		fmt.Fprintf(stderr, "ahorita: %v\n", err)
+		return 2
+	}
 
 	var outLines []string
 	exitCode := 0

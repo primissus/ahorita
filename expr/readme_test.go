@@ -90,10 +90,22 @@ var readmeCases = []readmeCase{
 	// +09:00 matches JST: 20:30Z + 9h = 2026-11-15T05:30:00+09:00.
 	{line: "now to +09:00            → offsets (+09:00, -06:00, +9, UTC+2, GMT-5)", input: "now to +09:00", want: "2026-11-15T05:30:00+09:00"},
 
-	// Business days (plan 9)
-	{line: "<range>, to business days", input: "2026-11-20 - 2026-11-16, to business days", wantErr: "aren't available yet"},
-	{line: "<day>, next business day", input: "2026-11-14, next business day", wantErr: "aren't available yet"},
-	{line: "<day> ± <n> business days", input: "2026-11-13 + 3 business days", wantErr: "aren't available yet"},
+	// Business days
+	{line: "<range>, to business days", input: "2026-11-20 - 2026-11-16, to business days", want: "4"},
+	{line: "<day>, next business day", input: "2026-11-14, next business day", want: "2026-11-17"},
+	{line: "next business day on or after <day>", input: "next business day on or after 2026-11-17", want: "2026-11-17"},
+	{line: "<day> ± <n> business days", input: "2026-11-13 + 3 business days", want: "2026-11-19"},
+	{
+		line:  "holidays MX 2026",
+		input: "holidays MX 2026",
+		want: "2026-01-01  New Year's Day\n" +
+			"2026-02-02  Constitution Day\n" +
+			"2026-03-16  Benito Juárez's Birthday\n" +
+			"2026-05-01  Labour Day\n" +
+			"2026-09-16  Independence Day\n" +
+			"2026-11-16  Revolution Day\n" +
+			"2026-12-25  Christmas Day",
+	},
 
 	// Spanish
 	{line: "hoy", input: "hoy", want: "2026-11-14"},

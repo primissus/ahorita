@@ -39,7 +39,7 @@ func TestLoad(t *testing.T) {
 		{
 			name: "no input defaults",
 			check: func(t *testing.T, s settings) {
-				if s.cfg != expr.DefaultConfig() {
+				if !reflect.DeepEqual(s.cfg, expr.DefaultConfig()) {
 					t.Errorf("cfg = %+v, want %+v", s.cfg, expr.DefaultConfig())
 				}
 				if s.loc != time.Local {
@@ -234,6 +234,103 @@ func TestLoad(t *testing.T) {
 			env:     map[string]string{"AHORITA_COUNT_INCLUSIVE": "yes"},
 			wantErr: "count_inclusive",
 		},
+		{
+			name: "country us flag",
+			args: []string{"--country", "us"},
+			check: func(t *testing.T, s settings) {
+				if s.cfg.Country != "US" {
+					t.Errorf("Country = %q, want US", s.cfg.Country)
+				}
+			},
+		},
+		{
+			name: "country none flag",
+			args: []string{"--country", "none"},
+			check: func(t *testing.T, s settings) {
+				if s.cfg.Country != "" {
+					t.Errorf("Country = %q, want empty", s.cfg.Country)
+				}
+			},
+		},
+		{
+			name:    "invalid country flag",
+			args:    []string{"--country", "xx"},
+			wantErr: "country",
+		},
+		{
+			name: "AHORITA_COUNTRY env",
+			env:  map[string]string{"AHORITA_COUNTRY": "es"},
+			check: func(t *testing.T, s settings) {
+				if s.cfg.Country != "ES" {
+					t.Errorf("Country = %q, want ES", s.cfg.Country)
+				}
+			},
+		},
+		{
+			name: "weekend sunday flag",
+			args: []string{"--weekend", "sunday"},
+			check: func(t *testing.T, s settings) {
+				want := []time.Weekday{time.Sunday}
+				if !reflect.DeepEqual(s.cfg.Weekend, want) {
+					t.Errorf("Weekend = %v, want %v", s.cfg.Weekend, want)
+				}
+			},
+		},
+		{
+			name: "weekend spanish deduplicated",
+			args: []string{"--weekend", "viernes,sabado,viernes"},
+			check: func(t *testing.T, s settings) {
+				want := []time.Weekday{time.Friday, time.Saturday}
+				if !reflect.DeepEqual(s.cfg.Weekend, want) {
+					t.Errorf("Weekend = %v, want %v", s.cfg.Weekend, want)
+				}
+			},
+		},
+		{
+			name: "weekend none flag",
+			args: []string{"--weekend", "none"},
+			check: func(t *testing.T, s settings) {
+				if len(s.cfg.Weekend) != 0 {
+					t.Errorf("Weekend = %v, want empty", s.cfg.Weekend)
+				}
+			},
+		},
+		{
+			name:    "invalid weekend flag",
+			args:    []string{"--weekend", "funday"},
+			wantErr: "weekend",
+		},
+		{
+			name: "AHORITA_WEEKEND env",
+			env:  map[string]string{"AHORITA_WEEKEND": "friday,saturday"},
+			check: func(t *testing.T, s settings) {
+				want := []time.Weekday{time.Friday, time.Saturday}
+				if !reflect.DeepEqual(s.cfg.Weekend, want) {
+					t.Errorf("Weekend = %v, want %v", s.cfg.Weekend, want)
+				}
+			},
+		},
+		{
+			name: "repeatable calendar flags override env",
+			args: []string{"--calendar", "/tmp/a.txt", "--calendar", "/tmp/b.txt"},
+			env:  map[string]string{"AHORITA_CALENDAR": "/tmp/env.txt"},
+			check: func(t *testing.T, s settings) {
+				want := []string{"/tmp/a.txt", "/tmp/b.txt"}
+				if !reflect.DeepEqual(s.calendars, want) {
+					t.Errorf("calendars = %v, want %v", s.calendars, want)
+				}
+			},
+		},
+		{
+			name: "AHORITA_CALENDAR comma separated",
+			env:  map[string]string{"AHORITA_CALENDAR": "/tmp/one.txt, /tmp/two.txt"},
+			check: func(t *testing.T, s settings) {
+				want := []string{"/tmp/one.txt", "/tmp/two.txt"}
+				if !reflect.DeepEqual(s.calendars, want) {
+					t.Errorf("calendars = %v, want %v", s.calendars, want)
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -348,7 +445,7 @@ func TestConfigFile(t *testing.T) {
 			name: "missing file at default path is ok",
 			env:  map[string]string{"HOME": "/home/user"},
 			check: func(t *testing.T, s settings) {
-				if s.cfg != expr.DefaultConfig() {
+				if !reflect.DeepEqual(s.cfg, expr.DefaultConfig()) {
 					t.Errorf("cfg = %+v, want default", s.cfg)
 				}
 			},
@@ -377,6 +474,38 @@ func TestConfigFile(t *testing.T) {
 			check: func(t *testing.T, s settings) {
 				if s.loc.String() != "UTC" {
 					t.Errorf("loc = %q, want UTC", s.loc.String())
+				}
+			},
+		},
+		{
+			name: "file setting country weekend and calendar overridden by flag",
+			args: []string{"--calendar", "/cli.txt"},
+			env:  map[string]string{"XDG_CONFIG_HOME": "/xdg"},
+			files: map[string]string{
+				xdgPath: "country = \"US\"\nweekend = \"sunday\"\ncalendar = \"/cfg1.txt, /cfg2.txt\"\n",
+			},
+			check: func(t *testing.T, s settings) {
+				if s.cfg.Country != "US" {
+					t.Errorf("Country = %q, want US", s.cfg.Country)
+				}
+				if !reflect.DeepEqual(s.cfg.Weekend, []time.Weekday{time.Sunday}) {
+					t.Errorf("Weekend = %v, want [Sunday]", s.cfg.Weekend)
+				}
+				if !reflect.DeepEqual(s.calendars, []string{"/cli.txt"}) {
+					t.Errorf("calendars = %v, want [/cli.txt]", s.calendars)
+				}
+			},
+		},
+		{
+			name: "file setting calendar without override",
+			env:  map[string]string{"XDG_CONFIG_HOME": "/xdg"},
+			files: map[string]string{
+				xdgPath: "calendar = \"/cfg1.txt, /cfg2.txt\"\n",
+			},
+			check: func(t *testing.T, s settings) {
+				want := []string{"/cfg1.txt", "/cfg2.txt"}
+				if !reflect.DeepEqual(s.calendars, want) {
+					t.Errorf("calendars = %v, want %v", s.calendars, want)
 				}
 			},
 		},

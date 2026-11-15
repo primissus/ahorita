@@ -59,7 +59,8 @@ func TestPeriod(t *testing.T) {
 		{name: "Q1 with year", input: "Q1 2025", want: "2025-01-01 → 2025-03-31"},
 		{name: "next feb 29 skips non-leap years", input: "2025-01-01, next feb 29", want: "2028-02-29"},
 		{name: "last feb 29 skips non-leap years", input: "2026-11-14, last feb 29", want: "2024-02-29"},
-		{name: "next business day not available yet", input: "next business day", wantErr: "business days aren't available yet"},
+		{name: "next business day skips weekend and holiday", input: "next business day", want: "2026-11-17"},
+		{name: "this business day errors", input: "this business day", wantErr: "next or last"},
 	}
 
 	for _, tc := range tests {
@@ -291,7 +292,7 @@ func TestCount(t *testing.T) {
 			now:   "2026-03-07T12:00:00-05:00",
 			want:  "47",
 		},
-		{name: "to business day error", input: "2d to business days", wantErr: "business days aren't available yet"},
+		{name: "to business day error without dates", input: "2d to business days", wantErr: "give a span"},
 	}
 
 	for _, tc := range tests {
@@ -333,7 +334,7 @@ func TestCount(t *testing.T) {
 			Op:   "to",
 			Pos:  0,
 			Args: []Node{{Op: "key", Pos: 3, Text: "cron"}},
-		}, Value{Kind: KRecurrence})
+		}, Value{Kind: KRecurrence}, false)
 		if err == nil || !strings.Contains(err.Error(), "aren't available yet") {
 			t.Fatalf("evalTo key error = %v, want 'aren't available yet'", err)
 		}

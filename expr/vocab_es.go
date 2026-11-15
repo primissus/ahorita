@@ -70,6 +70,14 @@ var vocabES = map[string]string{
 	"dias habiles":    "businessday",
 	"dia laborable":   "businessday",
 	"dias laborables": "businessday",
+	"feriados":        "holidays",
+	"feriado":         "holidays",
+	"festivos":        "holidays",
+	"festivo":         "holidays",
+	"dias festivos":   "holidays",
+	"dia festivo":     "holidays",
+	"dias feriados":   "holidays",
+	"dia feriado":     "holidays",
 
 	// Weekdays
 	"lunes":     "monday",

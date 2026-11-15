@@ -55,7 +55,11 @@ func TestArith(t *testing.T) {
 		{name: "today mul 2 error", input: "today * 2", wantErr: "cannot multiply"},
 		{name: "2M mul 1.5 error", input: "2M * 1.5", wantErr: "fractional"},
 		{name: "fractional day error", input: "1.5d", wantErr: "fractional"},
-		{name: "business day error", input: "2026-11-13 + 3 business days", wantErr: "business days aren't available yet"},
+		{name: "add business days", input: "2026-11-13 + 3 business days", want: "2026-11-19"},
+		{name: "business day duration value", input: "3 business days", want: "3 business days"},
+		{name: "business day combine error", input: "2d 1 business day", wantErr: "business days can't be combined with other units"},
+		{name: "business day plus day error", input: "1 business day + 2d", wantErr: "business days can't be combined with other units"},
+		{name: "fractional business day error", input: "1.5 business days", wantErr: "fractional values aren't supported for business days"},
 		{
 			name:  "NY DST spring forward add 1d keeps wall clock",
 			input: "2026-03-07 12:00 + 1d",

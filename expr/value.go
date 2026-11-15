@@ -24,10 +24,10 @@ const (
 
 // Duration stores calendar and fixed time components separately.
 type Duration struct {
-	Months int           // years and quarters are folded into months
-	Days   int           // weeks are folded into days
-	Nanos  time.Duration // hours, minutes, seconds
-	// plan 9 adds BizDays
+	Months  int           // years and quarters are folded into months
+	Days    int           // weeks are folded into days
+	BizDays int           // business days; cannot be combined with other units
+	Nanos   time.Duration // hours, minutes, seconds
 }
 
 // Value is the unified result type returned by the evaluator.
@@ -89,6 +89,7 @@ func formatDuration(d Duration) string {
 
 	months := d.Months
 	days := d.Days
+	bizDays := d.BizDays
 	nanos := d.Nanos
 
 	if nanos >= dayNanos || nanos <= -dayNanos {
@@ -104,15 +105,16 @@ func formatDuration(d Duration) string {
 		nanos -= dayNanos
 	}
 
-	if months == 0 && days == 0 && nanos == 0 {
+	if months == 0 && days == 0 && bizDays == 0 && nanos == 0 {
 		return "0s"
 	}
 
 	prefix := ""
-	if months <= 0 && days <= 0 && nanos <= 0 {
+	if months <= 0 && days <= 0 && bizDays <= 0 && nanos <= 0 {
 		prefix = "-"
 		months = -months
 		days = -days
+		bizDays = -bizDays
 		nanos = -nanos
 	}
 
@@ -127,6 +129,13 @@ func formatDuration(d Duration) string {
 	}
 	if days != 0 {
 		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if bizDays != 0 {
+		if bizDays == 1 {
+			parts = append(parts, "1 business day")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d business days", bizDays))
+		}
 	}
 
 	hours := nanos / time.Hour

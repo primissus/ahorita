@@ -101,8 +101,17 @@ func TestPrint(t *testing.T) {
 					{Op: "zone", Text: "Port of Spain"},
 				}},
 				{Op: "inzone", Args: []Node{{Op: "zone", Text: "UTC"}}},
+				{Op: "orsame", Args: []Node{
+					{Op: "rel", Text: "next", Args: []Node{{Op: "unit", Text: "businessday"}}},
+					{Op: "date", Text: "2026-11-14"},
+				}},
+				{Op: "orsame", Args: []Node{
+					{Op: "rel", Text: "last", Args: []Node{{Op: "unit", Text: "businessday"}}},
+				}},
+				{Op: "holidays"},
+				{Op: "holidays", Text: "MX", Args: []Node{{Op: "year", Text: "2026"}}},
 			}},
-			want: `today .. tomorrow | how many days between 2026-11-16 and 2026-11-20 inclusive | how many mondays between today and 2026-12-31 | how many halves between today and tomorrow | to hours | to business days | to "New York" | to cron | 14:00 @ Tokyo | @ Tokyo | yesterday 14:30 in "Port of Spain" | in UTC`,
+			want: `today .. tomorrow | how many days between 2026-11-16 and 2026-11-20 inclusive | how many mondays between today and 2026-12-31 | how many halves between today and tomorrow | to hours | to business days | to "New York" | to cron | 14:00 @ Tokyo | @ Tokyo | yesterday 14:30 in "Port of Spain" | in UTC | next business day on or after 2026-11-14 | last business day on or before | holidays | holidays MX 2026`,
 		},
 	}
 

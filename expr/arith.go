@@ -10,11 +10,27 @@ import (
 
 func evalDur(n Node) (Duration, error) {
 	var d Duration
+	var hasBiz, hasOther bool
 	for _, part := range n.Args {
 		switch part.Op {
 		case "businessday":
-			return Duration{}, &Error{Pos: part.Pos, Msg: "business days aren't available yet"}
+			hasBiz = true
+			if hasOther {
+				return Duration{}, &Error{Pos: part.Pos, Msg: "business days can't be combined with other units"}
+			}
+			count, err := strconv.Atoi(part.Text)
+			if err != nil {
+				if strings.ContainsRune(part.Text, '.') {
+					return Duration{}, &Error{Pos: part.Pos, Msg: "fractional values aren't supported for business days"}
+				}
+				return Duration{}, &Error{Pos: part.Pos, Msg: fmt.Sprintf("invalid business day count %q", part.Text)}
+			}
+			d.BizDays += count
 		case "second", "minute", "hour":
+			hasOther = true
+			if hasBiz {
+				return Duration{}, &Error{Pos: part.Pos, Msg: "business days can't be combined with other units"}
+			}
 			f, err := strconv.ParseFloat(part.Text, 64)
 			if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 				return Duration{}, &Error{Pos: part.Pos, Msg: fmt.Sprintf("invalid duration value %q", part.Text)}
@@ -34,6 +50,10 @@ func evalDur(n Node) (Duration, error) {
 			}
 			d.Nanos += time.Duration(math.Round(prod))
 		case "day", "week", "month", "quarter", "half", "year":
+			hasOther = true
+			if hasBiz {
+				return Duration{}, &Error{Pos: part.Pos, Msg: "business days can't be combined with other units"}
+			}
 			count, err := strconv.Atoi(part.Text)
 			if err != nil {
 				if strings.ContainsRune(part.Text, '.') {
@@ -95,17 +115,30 @@ func addDuration(t time.Time, d Duration, cfg Config) time.Time {
 	return t
 }
 
+func addDurationCtx(pos int, t time.Time, d Duration, ctx Context) (time.Time, error) {
+	t = addDuration(t, d, ctx.Cfg)
+	if d.BizDays != 0 {
+		return addBusinessDays(pos, t, d.BizDays, ctx)
+	}
+	return t, nil
+}
+
 func negateDuration(d Duration) Duration {
 	return Duration{
-		Months: -d.Months,
-		Days:   -d.Days,
-		Nanos:  -d.Nanos,
+		Months:  -d.Months,
+		Days:    -d.Days,
+		BizDays: -d.BizDays,
+		Nanos:   -d.Nanos,
 	}
 }
 
-func evalAdd(pos int, lhs, rhs Value, cfg Config) (Value, error) {
+func hasNonBiz(d Duration) bool {
+	return d.Months != 0 || d.Days != 0 || d.Nanos != 0
+}
+
+func evalAdd(pos int, lhs, rhs Value, ctx Context) (Value, error) {
 	if rhs.Kind == KDur {
-		return shiftValueByDur(pos, lhs, rhs.D, cfg, false)
+		return shiftValueByDur(pos, lhs, rhs.D, ctx, false)
 	}
 	return Value{}, &Error{
 		Pos: pos,
@@ -113,9 +146,9 @@ func evalAdd(pos int, lhs, rhs Value, cfg Config) (Value, error) {
 	}
 }
 
-func evalSub(pos int, lhs, rhs Value, cfg Config) (Value, error) {
+func evalSub(pos int, lhs, rhs Value, ctx Context) (Value, error) {
 	if rhs.Kind == KDur {
-		return shiftValueByDur(pos, lhs, negateDuration(rhs.D), cfg, true)
+		return shiftValueByDur(pos, lhs, negateDuration(rhs.D), ctx, true)
 	}
 	if (lhs.Kind == KDate || lhs.Kind == KDateTime) && (rhs.Kind == KDate || rhs.Kind == KDateTime) {
 		if lhs.Kind == KDate && rhs.Kind == KDate {
@@ -153,18 +186,25 @@ func evalSub(pos int, lhs, rhs Value, cfg Config) (Value, error) {
 	}
 }
 
-func shiftValueByDur(pos int, lhs Value, d Duration, cfg Config, isSub bool) (Value, error) {
+func shiftValueByDur(pos int, lhs Value, d Duration, ctx Context, isSub bool) (Value, error) {
 	switch lhs.Kind {
 	case KDate:
-		t := addDuration(lhs.T, d, cfg)
+		t, err := addDurationCtx(pos, lhs.T, d, ctx)
+		if err != nil {
+			return Value{}, err
+		}
 		if d.Nanos == 0 {
 			return Value{Kind: KDate, T: t, Local: lhs.Local}, nil
 		}
 		return Value{Kind: KDateTime, T: t, Local: lhs.Local}, nil
 	case KDateTime:
-		return Value{Kind: KDateTime, T: addDuration(lhs.T, d, cfg), Local: lhs.Local}, nil
+		t, err := addDurationCtx(pos, lhs.T, d, ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		return Value{Kind: KDateTime, T: t, Local: lhs.Local}, nil
 	case KTime:
-		if d.Months != 0 || d.Days != 0 {
+		if d.Months != 0 || d.Days != 0 || d.BizDays != 0 {
 			if isSub {
 				return Value{}, &Error{Pos: pos, Msg: "cannot subtract calendar units from a time of day"}
 			}
@@ -172,8 +212,14 @@ func shiftValueByDur(pos int, lhs Value, d Duration, cfg Config, isSub bool) (Va
 		}
 		return addTimeNanos(lhs, d.Nanos), nil
 	case KSpan:
-		t := addDuration(lhs.T, d, cfg)
-		end := addDuration(lhs.End, d, cfg)
+		t, err := addDurationCtx(pos, lhs.T, d, ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		end, err := addDurationCtx(pos, lhs.End, d, ctx)
+		if err != nil {
+			return Value{}, err
+		}
 		return Value{
 			Kind:  KSpan,
 			T:     t,
@@ -183,12 +229,16 @@ func shiftValueByDur(pos int, lhs Value, d Duration, cfg Config, isSub bool) (Va
 			Local: lhs.Local,
 		}, nil
 	case KDur:
+		if (lhs.D.BizDays != 0 && hasNonBiz(d)) || (d.BizDays != 0 && hasNonBiz(lhs.D)) {
+			return Value{}, &Error{Pos: pos, Msg: "business days can't be combined with other units"}
+		}
 		return Value{
 			Kind: KDur,
 			D: Duration{
-				Months: lhs.D.Months + d.Months,
-				Days:   lhs.D.Days + d.Days,
-				Nanos:  lhs.D.Nanos + d.Nanos,
+				Months:  lhs.D.Months + d.Months,
+				Days:    lhs.D.Days + d.Days,
+				BizDays: lhs.D.BizDays + d.BizDays,
+				Nanos:   lhs.D.Nanos + d.Nanos,
 			},
 		}, nil
 	default:
@@ -216,7 +266,7 @@ func evalMul(pos int, lhs, rhs Value) (Value, error) {
 		}
 	}
 
-	if (dur.Months != 0 || dur.Days != 0) && factor != math.Trunc(factor) {
+	if (dur.Months != 0 || dur.Days != 0 || dur.BizDays != 0) && factor != math.Trunc(factor) {
 		return Value{}, &Error{
 			Pos: pos,
 			Msg: "cannot multiply months or days by a fractional number",
@@ -230,9 +280,10 @@ func evalMul(pos int, lhs, rhs Value) (Value, error) {
 	return Value{
 		Kind: KDur,
 		D: Duration{
-			Months: dur.Months * intFactor,
-			Days:   dur.Days * intFactor,
-			Nanos:  time.Duration(math.Round(prod)),
+			Months:  dur.Months * intFactor,
+			Days:    dur.Days * intFactor,
+			BizDays: dur.BizDays * intFactor,
+			Nanos:   time.Duration(math.Round(prod)),
 		},
 	}, nil
 }

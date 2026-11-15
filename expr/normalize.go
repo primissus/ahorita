@@ -22,6 +22,14 @@ func Normalize(toks []Token, lang Lang) []Token {
 				i++
 				continue
 			}
+			if len(out) > 0 && out[len(out)-1].Key == "holidays" && isUpperASCII2(tok.Text) {
+				tok.Key = ""
+				tok.Lang = ""
+				tok.Tie = false
+				out = append(out, tok)
+				i++
+				continue
+			}
 
 			maxN := 0
 			for maxN < maxPhraseWords && i+maxN < len(toks) {
@@ -279,6 +287,10 @@ func quantityKey(unit string) (string, Lang) {
 	default:
 		return "", ""
 	}
+}
+
+func isUpperASCII2(s string) bool {
+	return len(s) == 2 && s[0] >= 'A' && s[0] <= 'Z' && s[1] >= 'A' && s[1] <= 'Z'
 }
 
 func isUnitKey(key string) bool {

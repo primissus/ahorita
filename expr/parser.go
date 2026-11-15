@@ -37,6 +37,7 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	             | ( Quantity(ordinal) | "1st".."5th" ) "week"
 	             | "now" | "today" | "yesterday" | "tomorrow"
 	             | ( "last" | "next" | "this" ) ( unit | weekday | month )
+	             | ( "next" "businessday" "onorafter" | "last" "businessday" "onorbefore" ) [ of-expr ]
 	             | weekday [ "last" | "next" | "this" | "closest" [ "to" postfix-expr ] ]
 	             | month [ "last" | "next" | "this" ]
 	             | period                   (* q1..q4 | h1..h2, optional 4-digit year *)
@@ -47,6 +48,7 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	             | ( "start" | "end" ) "of" ( unit | of-expr )
 	             | "closest" weekday [ "to" postfix-expr ]
 	             | "during" dur
+	             | "holidays" [ Word(2 letters) ] [ 4-digit-year ]
 	             | "starting" add-expr
 	             | "from" add-expr "to" add-expr
 	             | "between" add-expr "and" add-expr
@@ -82,6 +84,7 @@ AST Node Op table (contract with the evaluator):
 	ago           | -                       | dur
 	in            | -                       | dur
 	rel           | last | next | this      | unit | weekday | month
+	orsame        | -                       | rel [, anchor value]
 	unit          | unit key                | -
 	weekday       | monday..sunday          | -
 	month         | january..december       | optional day (num), optional year
@@ -91,6 +94,7 @@ AST Node Op table (contract with the evaluator):
 	of            | -                       | selector, period
 	closest       | -                       | weekday [, anchor value]
 	during        | -                       | dur
+	holidays      | 2-letter code or ""     | [year]
 	starting      | -                       | value
 	span          | -                       | from, to
 	count         | -                       | unit | weekday, from, to
@@ -147,6 +151,7 @@ func init() {
 	prefix["end"] = (*parser).parseBound
 	prefix["closest"] = (*parser).parseClosestPrefix
 	prefix["during"] = (*parser).parseDuring
+	prefix["holidays"] = (*parser).parseHolidays
 	prefix["starting"] = (*parser).parseStarting
 	prefix["from"] = (*parser).parseFromSpan
 	prefix["between"] = (*parser).parseBetweenSpan
@@ -601,12 +606,16 @@ func (p *parser) parseRelPrefix() (Node, error) {
 	if next.Kind == Word {
 		if isUnitKey(next.Key) {
 			uTok := p.next()
-			return Node{
+			rel := Node{
 				Op:   "rel",
 				Pos:  relTok.Pos,
 				Text: relTok.Key,
 				Args: []Node{{Op: "unit", Pos: uTok.Pos, Text: uTok.Key}},
-			}, nil
+			}
+			if uTok.Key == "businessday" {
+				return p.finishBusinessRel(rel)
+			}
+			return rel, nil
 		}
 		if isWeekdayKey(next.Key) {
 			wdTok := p.next()
@@ -639,14 +648,68 @@ func (p *parser) parseUnitRel() (Node, error) {
 	uTok := p.next()
 	if p.cur().Kind == Word && isRelKey(p.cur().Key) {
 		relTok := p.next()
-		return Node{
+		rel := Node{
 			Op:   "rel",
 			Pos:  uTok.Pos,
 			Text: relTok.Key,
 			Args: []Node{{Op: "unit", Pos: uTok.Pos, Text: uTok.Key}},
-		}, nil
+		}
+		if uTok.Key == "businessday" {
+			return p.finishBusinessRel(rel)
+		}
+		return rel, nil
 	}
 	return Node{}, p.unexpectedErr(p.cur(), "last", "next", "this")
+}
+
+func (p *parser) finishBusinessRel(rel Node) (Node, error) {
+	tok := p.cur()
+	if tok.Kind != Word || (tok.Key != "onorafter" && tok.Key != "onorbefore") {
+		return rel, nil
+	}
+	if tok.Key == "onorafter" && rel.Text != "next" {
+		return Node{}, &Error{Pos: tok.Pos, Msg: "\"on or after\" must be paired with \"next business day\""}
+	}
+	if tok.Key == "onorbefore" && rel.Text != "last" {
+		return Node{}, &Error{Pos: tok.Pos, Msg: "\"on or before\" must be paired with \"last business day\""}
+	}
+	p.next()
+	args := []Node{rel}
+	if p.startsOrSameAnchor() {
+		anchor, err := p.parseAtomWithOf(false)
+		if err != nil {
+			return Node{}, err
+		}
+		args = append(args, anchor)
+	}
+	return Node{Op: "orsame", Pos: rel.Pos, Args: args}, nil
+}
+
+func (p *parser) startsOrSameAnchor() bool {
+	tok := p.cur()
+	if tok.Kind == EOF || tok.Kind == Illegal {
+		return false
+	}
+	if tok.Kind == Op {
+		switch tok.Text {
+		case ",", "|", "..", "+", "-", "*", ")":
+			return false
+		case "@":
+			return p.peek(1).Kind == Number
+		}
+	}
+	if tok.Kind == Word {
+		switch tok.Key {
+		case "inclusive", "to", "and":
+			return false
+		case "in":
+			return !p.startsInZone()
+		}
+	}
+	if p.startsClock() {
+		return false
+	}
+	return true
 }
 
 func (p *parser) parseWeekPrefix() (Node, error) {
@@ -860,6 +923,20 @@ func (p *parser) parseDuring() (Node, error) {
 		return Node{}, err
 	}
 	return Node{Op: "during", Pos: dTok.Pos, Args: []Node{d}}, nil
+}
+
+func (p *parser) parseHolidays() (Node, error) {
+	hTok := p.next()
+	n := Node{Op: "holidays", Pos: hTok.Pos}
+	if tok := p.cur(); tok.Kind == Word && tok.Key == "" && len([]rune(tok.Text)) == 2 {
+		p.next()
+		n.Text = strings.ToUpper(tok.Text)
+	}
+	if tok := p.cur(); isYearToken(tok) {
+		p.next()
+		n.Args = []Node{{Op: "year", Pos: tok.Pos, Text: tok.Text}}
+	}
+	return n, nil
 }
 
 func (p *parser) parseStarting() (Node, error) {
@@ -1171,7 +1248,7 @@ func canTakeOf(op string) bool {
 func canTakeClock(op string) bool {
 	switch op {
 	case "date", "slash", "today", "yesterday", "tomorrow",
-		"rel", "weekday", "month", "period", "week", "of", "closest", "bound":
+		"rel", "orsame", "weekday", "month", "period", "week", "of", "closest", "bound":
 		return true
 	default:
 		return false

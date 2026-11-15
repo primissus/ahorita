@@ -114,6 +114,22 @@ func TestValueString(t *testing.T) {
 			want: "7d",
 		},
 		{
+			name: "duration single business day",
+			val: Value{
+				Kind: KDur,
+				D:    Duration{BizDays: 1},
+			},
+			want: "1 business day",
+		},
+		{
+			name: "duration negative business days",
+			val: Value{
+				Kind: KDur,
+				D:    Duration{BizDays: -3},
+			},
+			want: "-3 business days",
+		},
+		{
 			name: "duration negative compound",
 			val: Value{
 				Kind: KDur,

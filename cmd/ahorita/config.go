@@ -18,9 +18,10 @@ import (
 )
 
 type settings struct {
-	cfg  expr.Config
-	loc  *time.Location
-	opts expr.Options // Type, Pattern
+	cfg       expr.Config
+	loc       *time.Location
+	opts      expr.Options // Type, Pattern
+	calendars []string
 	// output switches, flags only:
 	noNewline, copy, json, explain bool
 	output                         string
@@ -205,6 +206,108 @@ var settingsTable = []settingDef{
 			}
 		},
 	},
+	{
+		key:   "country",
+		flags: []string{"country"},
+		env:   "AHORITA_COUNTRY",
+		usage: "holiday country code (two-letter code, or none)",
+		get: func(s *settings) string {
+			if s.cfg.Country == "" {
+				return "none"
+			}
+			return s.cfg.Country
+		},
+		apply: func(s *settings, value string) error {
+			v := strings.TrimSpace(value)
+			if strings.EqualFold(v, "none") {
+				s.cfg.Country = ""
+				return nil
+			}
+			code := strings.ToUpper(v)
+			if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+				return fmt.Errorf("invalid country %q: allowed values are a two-letter country code or none", value)
+			}
+			res := expr.Run("holidays "+code+" 2026", expr.Context{Loc: time.UTC}, expr.Options{}, false)
+			if res.Error != nil {
+				return fmt.Errorf("invalid country %q: %s", value, res.Error.Msg)
+			}
+			s.cfg.Country = code
+			return nil
+		},
+	},
+	{
+		key:   "weekend",
+		flags: []string{"weekend"},
+		env:   "AHORITA_WEEKEND",
+		usage: "comma-separated weekend weekdays in English or Spanish, or none",
+		get: func(s *settings) string {
+			if len(s.cfg.Weekend) == 0 {
+				return "none"
+			}
+			parts := make([]string, len(s.cfg.Weekend))
+			for i, w := range s.cfg.Weekend {
+				parts[i] = strings.ToLower(w.String())
+			}
+			return strings.Join(parts, ",")
+		},
+		apply: func(s *settings, value string) error {
+			v := strings.TrimSpace(value)
+			if strings.EqualFold(v, "none") {
+				s.cfg.Weekend = []time.Weekday{}
+				return nil
+			}
+			if v == "" {
+				return fmt.Errorf("invalid weekend %q: allowed values are comma-separated weekday names or none", value)
+			}
+			raw := strings.Split(v, ",")
+			days := make([]time.Weekday, 0, len(raw))
+			for _, item := range raw {
+				part := strings.TrimSpace(item)
+				if part == "" {
+					return fmt.Errorf("invalid weekend %q: empty weekday name", value)
+				}
+				toks := expr.Normalize(expr.Lex(part), expr.EN)
+				if len(toks) != 2 || toks[1].Kind != expr.EOF {
+					return fmt.Errorf("invalid weekend %q: %q is not a weekday name in English or Spanish", value, part)
+				}
+				wd, ok := weekdayKey(toks[0].Key)
+				if !ok {
+					return fmt.Errorf("invalid weekend %q: %q is not a weekday name in English or Spanish", value, part)
+				}
+				if !slices.Contains(days, wd) {
+					days = append(days, wd)
+				}
+			}
+			s.cfg.Weekend = days
+			return nil
+		},
+	},
+	{
+		key:   "calendar",
+		flags: []string{"calendar"},
+		env:   "AHORITA_CALENDAR",
+		usage: "days-off file path (repeatable; comma-separated in env/config)",
+		get: func(s *settings) string {
+			return strings.Join(s.calendars, ",")
+		},
+		apply: func(s *settings, value string) error {
+			v := strings.TrimSpace(value)
+			if v == "" {
+				return fmt.Errorf("invalid calendar %q: path cannot be empty", value)
+			}
+			raw := strings.Split(v, ",")
+			paths := make([]string, 0, len(raw))
+			for _, item := range raw {
+				p := strings.TrimSpace(item)
+				if p == "" {
+					return fmt.Errorf("invalid calendar %q: empty path", value)
+				}
+				paths = append(paths, p)
+			}
+			s.calendars = paths
+			return nil
+		},
+	},
 }
 
 func weekdayKey(key string) (time.Weekday, bool) {
@@ -250,6 +353,31 @@ type boolSettingValue struct {
 
 func (v *boolSettingValue) IsBoolFlag() bool {
 	return true
+}
+
+type calendarFlagValue struct {
+	s    *settings
+	seen bool
+}
+
+func (v *calendarFlagValue) String() string {
+	if v.s == nil {
+		return ""
+	}
+	return strings.Join(v.s.calendars, ",")
+}
+
+func (v *calendarFlagValue) Set(val string) error {
+	p := strings.TrimSpace(val)
+	if p == "" {
+		return fmt.Errorf("invalid calendar %q: path cannot be empty", val)
+	}
+	if !v.seen {
+		v.seen = true
+		v.s.calendars = nil
+	}
+	v.s.calendars = append(v.s.calendars, p)
+	return nil
 }
 
 type helpError struct {
@@ -300,10 +428,13 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 	for i := range settingsTable {
 		def := &settingsTable[i]
 		var fv flag.Value
-		sv := settingValue{def: def, s: &s}
-		if def.isBool {
-			fv = &boolSettingValue{settingValue: sv}
-		} else {
+		switch {
+		case def.key == "calendar":
+			fv = &calendarFlagValue{s: &s}
+		case def.isBool:
+			fv = &boolSettingValue{settingValue: settingValue{def: def, s: &s}}
+		default:
+			sv := settingValue{def: def, s: &s}
 			fv = &sv
 		}
 		for _, name := range def.flags {
@@ -480,4 +611,74 @@ func parseConfigValue(raw string) (string, error) {
 		}
 	}
 	return raw, nil
+}
+
+func loadDaysOff(paths []string, readFile func(string) ([]byte, error), ctx *expr.Context) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	if readFile == nil {
+		readFile = func(string) ([]byte, error) { return nil, os.ErrNotExist }
+	}
+	for _, path := range paths {
+		data, err := readFile(path)
+		if err != nil {
+			return fmt.Errorf("read calendar %q: %w", path, err)
+		}
+		lines := strings.Split(string(data), "\n")
+		for i, rawLine := range lines {
+			lineNum := i + 1
+			line := stripCalendarComment(rawLine)
+			if line == "" {
+				continue
+			}
+			val, err := expr.Eval(line, *ctx)
+			if err != nil {
+				return fmt.Errorf("%s: line %d: %w", path, lineNum, err)
+			}
+			if val.Kind != expr.KDate && !(val.Kind == expr.KSpan && val.Days) {
+				return fmt.Errorf("%s: line %d: expected a date or whole-day span, got %s", path, lineNum, valueKindLabel(val))
+			}
+			ctx.Cfg.DaysOff = append(ctx.Cfg.DaysOff, val)
+		}
+	}
+	return nil
+}
+
+func stripCalendarComment(line string) string {
+	inQuote := false
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '"':
+			inQuote = !inQuote
+		case '#':
+			if !inQuote {
+				return strings.TrimSpace(line[:i])
+			}
+		}
+	}
+	return strings.TrimSpace(line)
+}
+
+func valueKindLabel(v expr.Value) string {
+	switch v.Kind {
+	case expr.KDateTime:
+		return "a date-time"
+	case expr.KTime:
+		return "a time"
+	case expr.KDur:
+		return "a duration"
+	case expr.KSpan:
+		return "a non-whole-day span"
+	case expr.KNumber:
+		return "a number"
+	case expr.KList:
+		return "a list"
+	case expr.KText:
+		return "text"
+	case expr.KRecurrence:
+		return "a recurrence"
+	default:
+		return "a value"
+	}
 }

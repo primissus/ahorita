@@ -625,3 +625,125 @@ func TestErrorMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestBusinessCLI(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		files    map[string]string
+		wantExit int
+		wantOut  string
+		wantSub  string
+		wantErr  string
+	}{
+		{
+			name:    "country none skips MX holiday",
+			args:    withTZ("--country", "none", "2026-11-14, next business day"),
+			wantOut: "2026-11-16\n",
+		},
+		{
+			name:    "country none add business days across Nov 16",
+			args:    withTZ("--country", "none", "2026-11-13 + 3 business days"),
+			wantOut: "2026-11-18\n",
+		},
+		{
+			name:    "default MX skips Nov 16 Revolution Day",
+			args:    withTZ("2026-11-13 + 3 business days"),
+			wantOut: "2026-11-19\n",
+		},
+		{
+			name: "calendar whole-day span with inline comment",
+			args: withTZ("--calendar", "/trip.txt", "2026-11-14, next business day"),
+			files: map[string]string{
+				"/trip.txt": "# vacation\n\n2026-11-17 .. 2027-01-02 # trip\n",
+			},
+			wantOut: "2027-01-04\n",
+		},
+		{
+			name: "calendar expression uses reference now",
+			args: withTZ("--calendar", "/off.txt", "2026-11-19 + 1 business day"),
+			files: map[string]string{
+				"/off.txt": "# comment\n\nnext friday # 2026-11-20 from refNow 2026-11-14\n",
+			},
+			wantOut: "2026-11-23\n",
+		},
+		{
+			name: "repeatable calendar flags combine days off",
+			args: withTZ("--calendar", "/f1.txt", "--calendar", "/f2.txt", "2026-11-14, next business day"),
+			files: map[string]string{
+				"/f1.txt": "2026-11-17\n",
+				"/f2.txt": "2026-11-18\n",
+			},
+			wantOut: "2026-11-19\n",
+		},
+		{
+			name:     "calendar invalid value kind duration exits 2",
+			args:     withTZ("--calendar", "/bad.txt", "today"),
+			files:    map[string]string{"/bad.txt": "2h\n"},
+			wantExit: 2,
+			wantErr:  "/bad.txt: line 1:",
+		},
+		{
+			name:     "calendar eval error on line 2 exits 2",
+			args:     withTZ("--calendar", "/bad.txt", "today"),
+			files:    map[string]string{"/bad.txt": "# header\n2026-13-45\n"},
+			wantExit: 2,
+			wantErr:  "/bad.txt: line 2:",
+		},
+		{
+			name:     "missing calendar file exits 2",
+			args:     withTZ("--calendar", "/missing.txt", "today"),
+			wantExit: 2,
+			wantErr:  "/missing.txt",
+		},
+		{
+			name:    "weekend sunday makes saturday a business day",
+			args:    withTZ("--country", "none", "--weekend", "sunday", "2026-11-13, next business day"),
+			wantOut: "2026-11-14\n",
+		},
+		{
+			name:    "weekend none counts every calendar day",
+			args:    withTZ("--country", "none", "--weekend", "none", "2026-11-13 + 3 business days"),
+			wantOut: "2026-11-16\n",
+		},
+		{
+			name:     "invalid country exits 2",
+			args:     withTZ("--country", "XX", "today"),
+			wantExit: 2,
+			wantErr:  "country",
+		},
+		{
+			name:    "holidays MX 2026 English",
+			args:    withTZ("holidays MX 2026"),
+			wantSub: "2026-01-01  New Year's Day",
+		},
+		{
+			name:    "feriados MX 2026 Spanish",
+			args:    withTZ("feriados MX 2026"),
+			wantSub: "2026-01-01  Año Nuevo",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := testEnv(t, true)
+			if tc.files != nil {
+				e.readFile = filesMap(tc.files)
+			}
+			var out, errBuf bytes.Buffer
+			code := run(tc.args, strings.NewReader(""), &out, &errBuf, e)
+			if code != tc.wantExit {
+				t.Fatalf("exit code = %d, want %d; stdout=%q stderr=%q", code, tc.wantExit, out.String(), errBuf.String())
+			}
+			if tc.wantOut != "" && out.String() != tc.wantOut {
+				t.Errorf("stdout = %q, want %q", out.String(), tc.wantOut)
+			}
+			if tc.wantSub != "" && !strings.Contains(out.String(), tc.wantSub) {
+				t.Errorf("stdout = %q, want substring %q", out.String(), tc.wantSub)
+			}
+			if tc.wantErr != "" && !strings.Contains(errBuf.String(), tc.wantErr) {
+				t.Errorf("stderr = %q, want substring %q", errBuf.String(), tc.wantErr)
+			}
+		})
+	}
+}

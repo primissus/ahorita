@@ -24,11 +24,12 @@ func TestCases(t *testing.T) {
 	ctx := refCtx(t)
 
 	cases := []struct {
-		id    string
-		input string
-		opts  Options
-		want  string
-		skip  string
+		id         string
+		input      string
+		opts       Options
+		noHolidays bool
+		want       string
+		skip       string
 	}{
 		{id: "1", input: "today", want: "2026-11-14"},
 		{id: "2", input: "now - 1d", want: "2026-11-13T14:30:00-06:00"},
@@ -68,13 +69,20 @@ func TestCases(t *testing.T) {
 		{id: "29", input: "2026-11-14 14:30, America/New_York", want: "2026-11-14T14:30:00-05:00"},
 		{id: "30", input: "now to Asia/Tokyo", want: "2026-11-15T05:30:00+09:00"},
 		{id: "31", input: "now to UTC", want: "2026-11-14T20:30:00Z"},
-		{id: "32", input: "2026-11-20 - 2026-11-16, to business days", want: "4", skip: "plan 9"},
-		{id: "32a", input: "2026-11-20 - 2026-11-16, to business days inclusive", want: "4", skip: "plan 9"},
-		{id: "33", input: "2026-11-14, next business day", want: "2026-11-17", skip: "plan 9"},
-		{id: "33b", input: "2026-11-17, next business day", want: "2026-11-18", skip: "plan 9"},
-		{id: "34", input: "2026-11-13 + 3 business days", want: "2026-11-19", skip: "plan 9"},
-		{id: "34b", input: "2026-11-18 - 2 business days", want: "2026-11-13", skip: "plan 9"},
-		{id: "34c", input: "2026-11-14 + 1 business day", want: "2026-11-17", skip: "plan 9"},
+		{id: "32", input: "2026-11-20 - 2026-11-16, to business days", want: "4"},
+		{id: "32_no_holidays", input: "2026-11-20 - 2026-11-16, to business days", noHolidays: true, want: "4"},
+		{id: "32a", input: "2026-11-20 - 2026-11-16, to business days inclusive", want: "4"},
+		{id: "32a_no_holidays", input: "2026-11-20 - 2026-11-16, to business days inclusive", noHolidays: true, want: "5"},
+		{id: "33", input: "2026-11-14, next business day", want: "2026-11-17"},
+		{id: "33_no_holidays", input: "2026-11-14, next business day", noHolidays: true, want: "2026-11-16"},
+		{id: "33b", input: "2026-11-17, next business day", want: "2026-11-18"},
+		{id: "33b_no_holidays", input: "2026-11-17, next business day", noHolidays: true, want: "2026-11-18"},
+		{id: "34", input: "2026-11-13 + 3 business days", want: "2026-11-19"},
+		{id: "34_no_holidays", input: "2026-11-13 + 3 business days", noHolidays: true, want: "2026-11-18"},
+		{id: "34b", input: "2026-11-18 - 2 business days", want: "2026-11-13"},
+		{id: "34b_no_holidays", input: "2026-11-18 - 2 business days", noHolidays: true, want: "2026-11-16"},
+		{id: "34c", input: "2026-11-14 + 1 business day", want: "2026-11-17"},
+		{id: "34c_no_holidays", input: "2026-11-14 + 1 business day", noHolidays: true, want: "2026-11-16"},
 		{id: "35", input: "now + 2days", want: "2026-11-16T14:30:00-06:00"},
 		{id: "36", input: "now", opts: Options{Type: "date"}, want: "2026-11-14"},
 		{id: "37", input: "now", opts: Options{Type: "datetime"}, want: "2026-11-14T14:30:00-06:00"},
@@ -91,11 +99,15 @@ func TestCases(t *testing.T) {
 			if tc.skip != "" {
 				t.Skip(tc.skip)
 			}
-			got, err := Eval(tc.input, ctx)
+			c := ctx
+			if tc.noHolidays {
+				c.Cfg.Country = ""
+			}
+			got, err := Eval(tc.input, c)
 			if err != nil {
 				t.Fatalf("case %s (%q) unexpected error: %v", tc.id, tc.input, err)
 			}
-			out, err := Format(got, ctx, tc.opts)
+			out, err := Format(got, c, tc.opts)
 			if err != nil {
 				t.Fatalf("case %s (%q) Format error: %v", tc.id, tc.input, err)
 			}

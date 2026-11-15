@@ -48,6 +48,19 @@ func (n Node) String() string {
 			return n.Text
 		}
 		return n.Text + " " + n.Args[0].String()
+	case "orsame":
+		if len(n.Args) == 0 {
+			return "on or after"
+		}
+		phrase := "on or after"
+		if n.Args[0].Text == "last" {
+			phrase = "on or before"
+		}
+		out := n.Args[0].String() + " " + phrase
+		if len(n.Args) >= 2 {
+			out += " " + n.Args[1].String()
+		}
+		return out
 	case "month":
 		if len(n.Args) == 0 {
 			return n.Text
@@ -89,6 +102,15 @@ func (n Node) String() string {
 			return "during"
 		}
 		return "during " + n.Args[0].String()
+	case "holidays":
+		parts := []string{"holidays"}
+		if n.Text != "" {
+			parts = append(parts, n.Text)
+		}
+		if len(n.Args) > 0 {
+			parts = append(parts, n.Args[0].String())
+		}
+		return strings.Join(parts, " ")
 	case "starting":
 		if len(n.Args) == 0 {
 			return "starting"

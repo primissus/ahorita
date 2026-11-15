@@ -16,7 +16,7 @@ Two front ends, one engine:
 - **CLI**: fast, scriptable, pipe-friendly. Meant to be dropped into shell snippets and text expanders. This is v1.
 - **GUI**: a web calculator with buttons and date pickers for the same operations. *(planned, after the CLI)*
 
-> Status: the v1 engine and CLI work (arithmetic, relative dates, ranges, timezones, display formats, English and Spanish). Still missing: business days and holidays ([plan 9](plans/plan-9-business-days.md)), recurrence and cron ([plan 10](plans/plan-10-recurrence-cron.md)), and the web GUI ([plan 11](plans/plan-11-gui.md)). The build plan is in [`plans/`](plans/README.md).
+> Status: the v1 engine and CLI work (arithmetic, relative dates, ranges, timezones, business days and holidays, display formats, English and Spanish). Still missing: recurrence and cron ([plan 10](plans/plan-10-recurrence-cron.md)), and the web GUI ([plan 11](plans/plan-11-gui.md)). The build plan is in [`plans/`](plans/README.md).
 
 ## Usage
 
@@ -47,6 +47,9 @@ printf "today\ntomorrow\n" | ahorita  # evaluates non-empty lines from stdin
 | `--week-one` | `week_one` | `iso`, `first-day`, `full`, `days` | First week of period rule (default `iso`) |
 | `--month-overflow` | `month_overflow` | `clamp`, `overflow` | Month arithmetic end-of-month rule (default `clamp`) |
 | `--count-inclusive` | `count_inclusive` | `true`, `false` (flag alone sets `true`) | Include both end dates when counting |
+| `--country` | `country` | two-letter country code, or `none` | Holiday calendar (default `MX`; `none` disables holidays) |
+| `--weekend` | `weekend` | weekday names (EN or ES, comma-separated), or `none` | Non-working weekend days (default `saturday,sunday`) |
+| `--calendar` | `calendar` | path *(repeatable flag; comma-separated in env/config)* | Days-off file(s) (`#` comments, one date or whole-day span per line) |
 | `-n` | — | — | Omit trailing newline |
 | `-c` | — | — | Copy output (without trailing newline) to clipboard |
 | `--json` | — | — | Print JSON (`Result` object, one per line) |
@@ -58,9 +61,10 @@ printf "today\ntomorrow\n" | ahorita  # evaluates non-empty lines from stdin
 
 Precedence is **flag > environment variable > config file > default**.
 
-- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`.
+- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
 - `AHORITA_CONFIG` overrides the config file path (errors if missing). Standard `TZ`, `LC_ALL`, and `LANG` (values starting with `es` default to Spanish) are also honored.
 - Default config file path: `$XDG_CONFIG_HOME/ahorita/config.toml`, or `~/.config/ahorita/config.toml`. Missing default files are ignored.
+- **Days-off files (`--calendar`):** plain text with one ahorita expression per line evaluating to a date (`2026-11-02`, `next friday`) or a whole-day span (`2026-12-24 .. 2027-01-02`). Blank lines and `#` comments (full-line or inline) are ignored. Passing `--calendar` on the CLI overrides `AHORITA_CALENDAR` and `calendar` in config.
 
 Sample `~/.config/ahorita/config.toml`:
 
@@ -79,6 +83,11 @@ Sample `~/.config/ahorita/config.toml`:
 # week_one = "iso"
 # month_overflow = "clamp"
 # count_inclusive = false
+
+# Business days & holidays
+# country = "MX"
+# weekend = "saturday,sunday"
+# calendar = "~/.config/ahorita/days-off.txt"
 ```
 
 ## Output types
@@ -191,8 +200,11 @@ Names containing a keyword (`"Port of Spain"`, `"Ciudad de México"`) need quote
 ```
 <range>, to business days
 <day>, next business day
+next business day on or after <day>
 <day> ± <n> business days
+holidays MX 2026
 ```
+By default, `MX` follows Federal Labour Law (LFT art. 74), including the October 1 presidential inauguration every 6 years starting in 2024; pass `--country none` (or another two-letter code) to change it. Election days are also legal rest days in Mexico (LFT art. 74, IX) with no fixed calendar rule — add those dates to a `--calendar` days-off file.
 
 **Spanish**
 ```

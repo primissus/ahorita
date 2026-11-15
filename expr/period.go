@@ -127,7 +127,7 @@ func unitBounds(pos int, anchor time.Time, unit string, cfg Config) (start, end 
 		s := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), anchor.Hour(), anchor.Minute(), anchor.Second(), 0, loc)
 		return s, s.Add(time.Second), false, nil
 	case "businessday":
-		return time.Time{}, time.Time{}, false, &Error{Pos: pos, Msg: "business days aren't available yet"}
+		return time.Time{}, time.Time{}, false, &Error{Pos: pos, Msg: "start/end doesn't apply to business day"}
 	default:
 		return time.Time{}, time.Time{}, false, &Error{Pos: pos, Msg: fmt.Sprintf("unknown unit %q", unit)}
 	}
@@ -135,7 +135,7 @@ func unitBounds(pos int, anchor time.Time, unit string, cfg Config) (start, end 
 
 func shiftedUnitSpan(pos int, in Value, unit string, delta int, cfg Config) (Value, error) {
 	if unit == "businessday" {
-		return Value{}, &Error{Pos: pos, Msg: "business days aren't available yet"}
+		return Value{}, &Error{Pos: pos, Msg: "business day must be evaluated with context"}
 	}
 
 	if unit == "hour" || unit == "minute" || unit == "second" {
@@ -235,6 +235,9 @@ func (ev *evaluator) evalRel(n Node, in Value) (Value, error) {
 	target := n.Args[0]
 	switch target.Op {
 	case "unit":
+		if target.Text == "businessday" {
+			return ev.evalRelBusinessDay(n.Pos, in, delta)
+		}
 		return shiftedUnitSpan(n.Pos, in, target.Text, delta, ev.ctx.Cfg)
 
 	case "weekday":
@@ -270,6 +273,21 @@ func (ev *evaluator) evalRel(n Node, in Value) (Value, error) {
 	}
 
 	return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("unsupported relative target %q", target.Op)}
+}
+
+func (ev *evaluator) evalRelBusinessDay(pos int, in Value, delta int) (Value, error) {
+	if delta == 0 {
+		return Value{}, &Error{Pos: pos, Msg: "\"this business day\" isn't defined — use next or last"}
+	}
+	d, err := inputDate(pos, in)
+	if err != nil {
+		return Value{}, err
+	}
+	res, err := nextBusinessDay(pos, d, delta, false, ev.ctx)
+	if err != nil {
+		return Value{}, err
+	}
+	return Value{Kind: KDate, T: res, Local: in.Local}, nil
 }
 
 func parseMonthArgs(n Node) (m time.Month, day int, hasDay bool, dayPos int, year int, hasYear bool, err error) {
@@ -700,7 +718,10 @@ func (ev *evaluator) evalDuring(n Node) (Value, error) {
 		days = false
 		local = false
 	}
-	end := addDuration(start, d, ev.ctx.Cfg)
+	end, err := addDurationCtx(n.Pos, start, d, ev.ctx)
+	if err != nil {
+		return Value{}, err
+	}
 	if end.Before(start) {
 		return Value{}, &Error{Pos: n.Pos, Msg: "end of span is before start"}
 	}
@@ -753,7 +774,10 @@ func (ev *evaluator) evalStarting(n Node, in Value) (Value, error) {
 		if days {
 			start = dateOnly(start)
 		}
-		end = addDuration(start, in.D, ev.ctx.Cfg)
+		end, err = addDurationCtx(n.Pos, start, in.D, ev.ctx)
+		if err != nil {
+			return Value{}, err
+		}
 	} else if in.Days && sv.Kind == KDate {
 		days = true
 		start = dateOnly(start)
@@ -788,7 +812,7 @@ func fractionalDayDiff(start, end time.Time) float64 {
 	return days + (endTOD - startTOD)
 }
 
-func countUnits(pos int, start, end time.Time, unit string, isWeekday bool, inclusive bool, cfg Config) (float64, error) {
+func countUnits(pos int, start, end time.Time, unit string, isWeekday bool, inclusive bool, ctx Context) (float64, error) {
 	if isWeekday {
 		wd, err := parseWeekday(pos, unit)
 		if err != nil {
@@ -842,13 +866,17 @@ func countUnits(pos int, start, end time.Time, unit string, isWeekday bool, incl
 			effEnd = effEnd.AddDate(0, 0, 1)
 		}
 		for n := 0; ; n++ {
-			next := addDuration(start, Duration{Months: (n + 1) * unitMonths}, cfg)
+			next := addDuration(start, Duration{Months: (n + 1) * unitMonths}, ctx.Cfg)
 			if next.After(effEnd) {
 				return float64(n), nil
 			}
 		}
 	case "businessday":
-		return 0, &Error{Pos: pos, Msg: "business days aren't available yet"}
+		count, err := countBusinessDays(pos, start, end, inclusive, true, ctx)
+		if err != nil {
+			return 0, err
+		}
+		return float64(count), nil
 	default:
 		return 0, &Error{Pos: pos, Msg: fmt.Sprintf("cannot count unit %q", unit)}
 	}
@@ -875,9 +903,9 @@ func (ev *evaluator) evalCount(n Node, in Value, explicitInclusive bool) (Value,
 	var count float64
 	switch what.Op {
 	case "weekday":
-		count, err = countUnits(what.Pos, start, end, what.Text, true, incl, ev.ctx.Cfg)
+		count, err = countUnits(what.Pos, start, end, what.Text, true, incl, ev.ctx)
 	case "unit":
-		count, err = countUnits(what.Pos, start, end, what.Text, false, incl, ev.ctx.Cfg)
+		count, err = countUnits(what.Pos, start, end, what.Text, false, incl, ev.ctx)
 	default:
 		return Value{}, &Error{Pos: what.Pos, Msg: fmt.Sprintf("cannot count %q", what.Op)}
 	}
@@ -887,7 +915,7 @@ func (ev *evaluator) evalCount(n Node, in Value, explicitInclusive bool) (Value,
 	return Value{Kind: KNumber, N: count}, nil
 }
 
-func (ev *evaluator) evalTo(n Node, in Value) (Value, error) {
+func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, error) {
 	if len(n.Args) < 1 {
 		return Value{}, &Error{Pos: n.Pos, Msg: "invalid to expression"}
 	}
@@ -896,26 +924,53 @@ func (ev *evaluator) evalTo(n Node, in Value) (Value, error) {
 	case "key":
 		return Value{}, &Error{Pos: target.Pos, Msg: fmt.Sprintf("%q aren't available yet", target.Text)}
 	case "unit":
-		if target.Text == "businessday" {
-			return Value{}, &Error{Pos: target.Pos, Msg: "business days aren't available yet"}
-		}
 		switch in.Kind {
 		case KSpan:
-			res, err := countUnits(target.Pos, in.T, in.End, target.Text, false, false, ev.ctx.Cfg)
+			if target.Text == "businessday" {
+				res, err := countSpanBusinessDays(target.Pos, in, ev.ctx)
+				if err != nil {
+					return Value{}, err
+				}
+				return Value{Kind: KNumber, N: float64(res)}, nil
+			}
+			res, err := countUnits(target.Pos, in.T, in.End, target.Text, false, false, ev.ctx)
 			if err != nil {
 				return Value{}, err
 			}
 			return Value{Kind: KNumber, N: res}, nil
 		case KDur:
 			if in.HasEnds {
-				res, err := countUnits(target.Pos, in.T, in.End, target.Text, false, false, ev.ctx.Cfg)
+				var res float64
+				var err error
+				if target.Text == "businessday" {
+					incl := explicitInclusive || ev.ctx.Cfg.CountInclusive
+					cnt, cerr := countBusinessDays(target.Pos, in.T, in.End, incl, true, ev.ctx)
+					res, err = float64(cnt), cerr
+				} else {
+					res, err = countUnits(target.Pos, in.T, in.End, target.Text, false, explicitInclusive, ev.ctx)
+				}
 				if err != nil {
 					return Value{}, err
 				}
-				if in.D.Months < 0 || in.D.Days < 0 || in.D.Nanos < 0 {
+				if in.D.Months < 0 || in.D.Days < 0 || in.D.BizDays < 0 || in.D.Nanos < 0 {
 					res = -res
 				}
 				return Value{Kind: KNumber, N: res}, nil
+			}
+			if in.D.BizDays != 0 {
+				if target.Text == "businessday" {
+					return Value{Kind: KNumber, N: float64(in.D.BizDays)}, nil
+				}
+				return Value{}, &Error{
+					Pos: n.Pos,
+					Msg: fmt.Sprintf("a business day has no fixed length; give a start: during ..., to %ss", target.Text),
+				}
+			}
+			if target.Text == "businessday" {
+				return Value{}, &Error{
+					Pos: target.Pos,
+					Msg: "business days depend on the calendar; give a span or date difference",
+				}
 			}
 			if in.D.Months != 0 {
 				return Value{}, &Error{

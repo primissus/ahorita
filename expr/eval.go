@@ -36,6 +36,7 @@ type evaluator struct {
 	ctx     Context
 	loc     *time.Location
 	cfgLang Lang
+	resLang Lang
 }
 
 func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
@@ -74,6 +75,7 @@ func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
 		ctx:     ctx,
 		loc:     loc,
 		cfgLang: cfgLang,
+		resLang: resLang,
 	}
 
 	cur := Value{
@@ -201,7 +203,7 @@ func classifyStage(n Node) (stageClass, int) {
 			}
 			break
 		}
-		if isValueOp(cur.Op) {
+		if isValueOp(cur.Op) || (cur.Op == "orsame" && len(cur.Args) >= 2) {
 			return classValue, 0
 		}
 		return classOther, 0
@@ -227,6 +229,14 @@ func classifyStage(n Node) (stageClass, int) {
 			if cls == classPeriod {
 				return cls, rank
 			}
+		}
+		return classOther, 0
+	case "orsame":
+		if len(n.Args) >= 2 {
+			return classValue, 0
+		}
+		if len(n.Args) == 1 {
+			return classifyStage(n.Args[0])
 		}
 		return classOther, 0
 	case "rel":
@@ -430,9 +440,9 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 		}
 		switch n.Op {
 		case "+":
-			return evalAdd(n.Pos, lhs, rhs, ev.ctx.Cfg)
+			return evalAdd(n.Pos, lhs, rhs, ev.ctx)
 		case "-":
-			return evalSub(n.Pos, lhs, rhs, ev.ctx.Cfg)
+			return evalSub(n.Pos, lhs, rhs, ev.ctx)
 		case "*":
 			return evalMul(n.Pos, lhs, rhs)
 		default:
@@ -450,7 +460,10 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 		if n.Op == "ago" {
 			d = negateDuration(d)
 		}
-		t := addDuration(ev.ctx.Now.In(ev.loc), d, ev.ctx.Cfg)
+		t, err := addDurationCtx(n.Pos, ev.ctx.Now.In(ev.loc), d, ev.ctx)
+		if err != nil {
+			return Value{}, err
+		}
 		return Value{Kind: KDateTime, T: t, Local: false}, nil
 
 	case "weekday":
@@ -458,6 +471,9 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 
 	case "rel":
 		return ev.evalRel(n, in)
+
+	case "orsame":
+		return ev.evalOrSame(n, in)
 
 	case "month":
 		return ev.evalMonth(n, in)
@@ -483,6 +499,9 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 	case "during":
 		return ev.evalDuring(n)
 
+	case "holidays":
+		return ev.evalHolidays(n, in)
+
 	case "starting":
 		return ev.evalStarting(n, in)
 
@@ -493,13 +512,16 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 		if len(n.Args) < 1 {
 			return Value{}, &Error{Pos: n.Pos, Msg: "invalid inclusive modifier"}
 		}
-		if n.Args[0].Op == "count" {
+		switch n.Args[0].Op {
+		case "count":
 			return ev.evalCount(n.Args[0], in, true)
+		case "to":
+			return ev.evalTo(n.Args[0], in, true)
 		}
 		return ev.node(n.Args[0], in)
 
 	case "to":
-		return ev.evalTo(n, in)
+		return ev.evalTo(n, in, false)
 
 	case "zone":
 		return ev.evalZoneStage(n, in)
