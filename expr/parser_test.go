@@ -125,6 +125,25 @@ func TestParse(t *testing.T) {
 		{input: "aug 9 am", canonical: "august 09:00"},
 		{input: "monday closest to 2026-12-01", canonical: "closest monday to 2026-12-01"},
 		{input: "2026-13-45"}, // no date validation in parser
+		// Plan 6 timezone offsets
+		{input: "now to +09:00", canonical: "now | to +09:00"},
+		{input: "now to -06:00", canonical: "now | to -06:00"},
+		{input: "now to +9", canonical: "now | to +9"},
+		{input: "now to -6", canonical: "now | to -6"},
+		{input: "now to +0900", canonical: "now | to +0900"},
+		{input: "now to UTC+2", canonical: "now | to UTC+2"},
+		{input: "now to utc+9", canonical: "now | to UTC+9"},
+		{input: "now to GMT-5", canonical: "now | to UTC-5"},
+		{input: "now to UTC+09:00", canonical: "now | to UTC+09:00"},
+		{input: "2pm @ -06:00", canonical: "14:00 @ -06:00"},
+		{input: "2pm @ UTC+2", canonical: "14:00 @ UTC+2"},
+		{input: "2pm @ UTC + 1h", canonical: "14:00 @ UTC + 1h"},
+		{input: "2pm @ UTC + 1 day", canonical: "14:00 @ UTC + 1d"},
+		{input: "2pm @ +09:00 + 1h", canonical: "14:00 @ +09:00 + 1h"},
+		{input: "2026-11-14 14:30 in +09:00"},
+		{input: "now | in -06:00"},
+		{input: "now | @ +09:00"},
+		{input: "2026-11-14 14:30, +09:00", canonical: "2026-11-14 14:30 | +09:00"},
 	}
 
 	for _, tc := range bigTable {
@@ -531,6 +550,34 @@ func TestParseErrors(t *testing.T) {
 			wantMsg:      "unexpected",
 			wantExpected: true,
 		},
+		{
+			name:    "to UTC plus quantity is not offset",
+			input:   "now to UTC + 1h",
+			wantPos: 11,
+			wantMsg: `unexpected "+"`,
+		},
+		{
+			name:         "to plus quantity is not offset",
+			input:        "now to +1h",
+			wantPos:      7,
+			wantMsg:      `unexpected "+"`,
+			wantExpected: true,
+			wantExpItem:  "a timezone",
+		},
+		{
+			name:         "to plus number and unit is not offset",
+			input:        "now to +1 day",
+			wantPos:      7,
+			wantMsg:      `unexpected "+"`,
+			wantExpected: true,
+			wantExpItem:  "a timezone",
+		},
+		{
+			name:    "to Z+2 is not a prefixed offset",
+			input:   "now to Z+2",
+			wantPos: 8,
+			wantMsg: `unexpected "+"`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -665,6 +712,12 @@ func TestREADMEExpressionsParse(t *testing.T) {
 		{"2026-11-14 14:30 in Tokyo", EN},
 		{"2026-11-14 14:30, America/New_York", EN},
 		{"now, to Asia/Tokyo", EN},
+		{"now to Tokyo", EN},
+		{"now to CDMX", EN},
+		{"now to JST", EN},
+		{"now to +09:00", EN},
+		{`now to "Port of Spain"`, EN},
+		{`now to "Ciudad de México"`, EN},
 		{"2026-11-20 - 2026-11-16, to business days", EN},
 		{"2026-11-14, next business day", EN},
 		{"2026-11-13 + 3 business days", EN},

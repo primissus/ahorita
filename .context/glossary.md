@@ -31,5 +31,5 @@ Case-sensitive where it matters: `m` = minute, `M` = month. Others: `s`, `h`, `d
 - **Q1–Q4** → calendar quarters.
 - **H1/H2** → calendar half-years.
 - **DoW** → day of week.
-- **tz** → IANA timezone (`America/Mexico_City`), or a place name resolved to one.
+- **tz** → IANA timezone (`America/Mexico_City`), or a place name, alias, abbreviation, or fixed offset resolved to one.
 - **★** → the recommended option in a questions file.

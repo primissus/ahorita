@@ -57,7 +57,11 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	clock        = Clock [ "am" | "pm" ] | Quantity("am" | "pm") | Number ( "am" | "pm" ) ;
 	month        = month-name [ day ] [ 4-digit-year ]
 	             | day [ "of" ] month-name [ [ "of" ] 4-digit-year ] ;
-	zone         = String | "utc" | Word(Key=="") { Word(Key=="") } ;
+	zone         = String
+	             | "utc"                    (* includes gmt, z; utc/gmt may take +/- offset *)
+	             | ( "utc" | "gmt" ) ( "+" | "-" ) ( Clock | Number )
+	             | ( "+" | "-" ) ( Clock | Number )
+	             | Word(Key=="") { Word(Key=="") } ;
 
 AST Node Op table (contract with the evaluator):
 
@@ -262,7 +266,7 @@ func (p *parser) parseStageBody() (Node, error) {
 			return p.parseZone()
 		}
 	}
-	if tok.Kind == String {
+	if tok.Kind == String || p.startsZoneOffset(0) {
 		return p.parseZone()
 	}
 	if tok.Kind == Op && tok.Text == "@" && p.peek(1).Kind != Number {
@@ -296,7 +300,7 @@ func (p *parser) parseToStage() (Node, error) {
 			Args: []Node{{Op: "key", Pos: next.Pos, Text: next.Key}},
 		}, nil
 	}
-	if canStartZone(next) {
+	if p.canStartZone() {
 		z, err := p.parseZone()
 		if err != nil {
 			return Node{}, err
@@ -332,18 +336,13 @@ func (p *parser) parseInZoneStage() (Node, error) {
 
 func (p *parser) startsInZone() bool {
 	tok1 := p.peek(1)
-	if tok1.Kind == String {
+	if tok1.Kind == String || tok1.Kind == EOF {
 		return true
 	}
-	if tok1.Kind == Word {
-		if tok1.Key == "utc" || tok1.Key == "" {
-			return true
-		}
-	}
-	if tok1.Kind == EOF {
+	if tok1.Kind == Word && (tok1.Key == "utc" || tok1.Key == "") {
 		return true
 	}
-	return false
+	return p.startsZoneOffset(1)
 }
 
 func (p *parser) parseExpr(minBP int) (Node, error) {
@@ -997,6 +996,15 @@ func (p *parser) parseZone() (Node, error) {
 			return Node{}, &Error{Pos: tok.Pos, Msg: "empty timezone name"}
 		}
 		return Node{Op: "zone", Pos: tok.Pos, Text: tok.Text}, nil
+	case p.startsPrefixedZoneOffset():
+		utcTok := p.next()
+		signTok := p.next()
+		valTok := p.next()
+		return Node{Op: "zone", Pos: utcTok.Pos, Text: "UTC" + signTok.Text + valTok.Text}, nil
+	case p.startsZoneOffset(0):
+		signTok := p.next()
+		valTok := p.next()
+		return Node{Op: "zone", Pos: signTok.Pos, Text: signTok.Text + valTok.Text}, nil
 	case tok.Kind == Word && tok.Key == "utc":
 		p.next()
 		return Node{Op: "zone", Pos: tok.Pos, Text: "UTC"}, nil
@@ -1101,11 +1109,54 @@ func formatClock24(raw, ampm string, pos int) (string, error) {
 	return fmt.Sprintf("%02d:00", h), nil
 }
 
-func canStartZone(tok Token) bool {
+func (p *parser) canStartZone() bool {
+	tok := p.cur()
 	if tok.Kind == String {
 		return true
 	}
-	return tok.Kind == Word && (tok.Key == "utc" || tok.Key == "")
+	if tok.Kind == Word && (tok.Key == "utc" || tok.Key == "") {
+		return true
+	}
+	return p.startsZoneOffset(0)
+}
+
+func (p *parser) startsZoneOffset(offset int) bool {
+	signTok := p.peek(offset)
+	if signTok.Kind != Op || (signTok.Text != "+" && signTok.Text != "-") {
+		return false
+	}
+	valTok := p.peek(offset + 1)
+	if valTok.Pos != signTok.Pos+len(signTok.Text) {
+		return false
+	}
+	switch valTok.Kind {
+	case Clock:
+		return true
+	case Number:
+		next := p.peek(offset + 2)
+		if next.Kind == Word && (isUnitKey(next.Key) || next.Key == "am" || next.Key == "pm") {
+			return false
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *parser) startsPrefixedZoneOffset() bool {
+	tok := p.cur()
+	if tok.Kind != Word {
+		return false
+	}
+	low := fold(tok.Text)
+	if low != "utc" && low != "gmt" {
+		return false
+	}
+	signTok := p.peek(1)
+	if signTok.Kind != Op || signTok.Pos != tok.Pos+len(tok.Text) {
+		return false
+	}
+	return p.startsZoneOffset(1)
 }
 
 func canTakeOf(op string) bool {

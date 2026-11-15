@@ -117,7 +117,12 @@ every day 2nd
 <date>, <tz>
 …, to <timezone>         → convert
 …, to UTC
+now to Tokyo             → places (IANA city names, case- and accent-insensitive)
+now to CDMX              → aliases (CDMX, NYC, DC, SF, LA, Tokio, Londres, …)
+now to JST               → fixed-offset abbreviations (EST, PST, CET, JST, …; ambiguous like CST error)
+now to +09:00            → offsets (+09:00, -06:00, +9, UTC+2, GMT-5)
 ```
+Names containing a keyword (`"Port of Spain"`, `"Ciudad de México"`) need quotes.
 
 **Business days**
 ```

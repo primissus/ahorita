@@ -752,20 +752,6 @@ func daysInMonth(y int, m time.Month) int {
 	}
 }
 
-func lookupZone(name string) (*time.Location, error) {
-	if strings.EqualFold(name, "UTC") {
-		return time.UTC, nil
-	}
-	if name == "" || strings.EqualFold(name, "Local") {
-		return nil, &Error{Msg: fmt.Sprintf("unknown timezone or word %q", name)}
-	}
-	loc, err := time.LoadLocation(name)
-	if err != nil {
-		return nil, &Error{Msg: fmt.Sprintf("unknown timezone or word %q", name)}
-	}
-	return loc, nil
-}
-
 func lookupZoneNode(n Node) (*time.Location, error) {
 	loc, err := lookupZone(n.Text)
 	if err != nil {
