@@ -26,6 +26,7 @@ func TestCases(t *testing.T) {
 	cases := []struct {
 		id    string
 		input string
+		opts  Options
 		want  string
 		skip  string
 	}{
@@ -75,6 +76,14 @@ func TestCases(t *testing.T) {
 		{id: "34b", input: "2026-11-18 - 2 business days", want: "2026-11-13", skip: "plan 9"},
 		{id: "34c", input: "2026-11-14 + 1 business day", want: "2026-11-17", skip: "plan 9"},
 		{id: "35", input: "now + 2days", want: "2026-11-16T14:30:00-06:00"},
+		{id: "36", input: "now", opts: Options{Type: "date"}, want: "2026-11-14"},
+		{id: "37", input: "now", opts: Options{Type: "datetime"}, want: "2026-11-14T14:30:00-06:00"},
+		{id: "38", input: "now", opts: Options{Type: "time"}, want: "14:30"},
+		{id: "39", input: "now", opts: Options{Type: "range"}, want: "0s"},
+		{id: "40", input: "now", opts: Options{Type: "relative"}, want: "now"},
+		{id: "40b", input: "today + 2d", opts: Options{Type: "relative"}, want: "in 2 days"},
+		{id: "41", input: "2026-06-02", opts: Options{Pattern: "dd-MM-yyyy"}, want: "02-06-2026"},
+		{id: "42", input: "2026-06-02", opts: Options{Pattern: "d/M/yy"}, want: "2/6/26"},
 	}
 
 	for _, tc := range cases {
@@ -86,8 +95,12 @@ func TestCases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("case %s (%q) unexpected error: %v", tc.id, tc.input, err)
 			}
-			if got.String() != tc.want {
-				t.Fatalf("case %s (%q) = %q, want %q", tc.id, tc.input, got.String(), tc.want)
+			out, err := Format(got, ctx, tc.opts)
+			if err != nil {
+				t.Fatalf("case %s (%q) Format error: %v", tc.id, tc.input, err)
+			}
+			if out != tc.want {
+				t.Fatalf("case %s (%q) = %q, want %q", tc.id, tc.input, out, tc.want)
 			}
 		})
 	}

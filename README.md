@@ -30,7 +30,33 @@ Two front ends, one engine:
 | `range`    | `2d 4h` / start → end       |
 | `relative` | `in 2 days` / `3 weeks ago` |
 
-The default display is ISO. `-f, --format` takes a pattern (`dd-MM-yyyy`, `d/M/yy`, `HH:mm`) or a preset (`iso`, `rfc3339`, `unix`, `human`).
+The default display is ISO. `-f, --format` takes a pattern (`dd-MM-yyyy`, `d/M/yy`, `HH:mm`) or a preset (`iso`, `rfc3339`, `unix`, `human`, `short`).
+
+**Presets**
+
+| Preset    | Date (EN / ES)                          | Date-time (EN / ES)                                     | Time (EN / ES)      |
+|-----------|-----------------------------------------|---------------------------------------------------------|---------------------|
+| `iso`     | `2026-11-14`                            | `2026-11-14T14:30:00-06:00`                             | `14:30`             |
+| `rfc3339` | `2026-11-14T00:00:00-06:00`             | `2026-11-14T14:30:00-06:00`                             | — *(error)*         |
+| `unix`    | `1794636000` *(00:00 that day)*         | `1794688200`                                            | — *(error)*         |
+| `human`   | `Sat, Nov 14, 2026` / `sáb 14 nov 2026` | `Sat, Nov 14, 2026, 2:30 PM` / `sáb 14 nov 2026, 14:30` | `2:30 PM` / `14:30` |
+| `short`   | `11-14-2026` / `14-11-2026`             | `11-14-2026 14:30` / `14-11-2026 14:30`                 | `14:30`             |
+
+**Pattern tokens**
+
+| Token                       | Meaning      | Example                                      |
+|-----------------------------|--------------|----------------------------------------------|
+| `yyyy` / `yy`               | Year         | `2026` / `26`                                |
+| `MMMM` / `MMM` / `MM` / `M` | Month        | `June` / `Jun` / `06` / `6`                  |
+| `dd` / `d`                  | Day of month | `02` / `2`                                   |
+| `EEEE` / `EEE`              | Weekday      | `Tuesday` / `Tue` *(ES: `martes` / `mar`)*   |
+| `HH` / `H`                  | Hour (0–23)  | `09` / `9`                                   |
+| `hh` / `h`                  | Hour (1–12)  | `02` / `2`                                   |
+| `mm` / `m`                  | Minute       | `05` / `5`                                   |
+| `ss` / `s`                  | Second       | `07` / `7`                                   |
+| `a`                         | AM / PM      | `PM` *(ES: `p. m.`)*                         |
+| `XXX`                       | Zone offset  | `-06:00`, `Z`                                |
+| `'text'`                    | Literal text | `'T'`, `'de'` (`''` for `'`)                 |
 
 ## Expression examples
 
