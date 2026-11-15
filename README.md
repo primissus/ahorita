@@ -16,7 +16,70 @@ Two front ends, one engine:
 - **CLI**: fast, scriptable, pipe-friendly. Meant to be dropped into shell snippets and text expanders. This is v1.
 - **GUI**: a web calculator with buttons and date pickers for the same operations. *(planned, after the CLI)*
 
-> Status: the lexer (and starter normalizer) exists and nothing else does yet. Below is the target feature set. The build plan is in [`plans/`](plans/README.md).
+> Status: the v1 engine and CLI work (arithmetic, relative dates, ranges, timezones, display formats, English and Spanish). Still missing: business days and holidays ([plan 9](plans/plan-9-business-days.md)), recurrence and cron ([plan 10](plans/plan-10-recurrence-cron.md)), and the web GUI ([plan 11](plans/plan-11-gui.md)). The build plan is in [`plans/`](plans/README.md).
+
+## Usage
+
+```sh
+ahorita                       # prints now
+ahorita now + 2d              # unquoted expression arguments are joined with spaces
+ahorita -t date next month    # flags go before the expression
+ahorita -- -06:00             # use -- before expressions starting with -
+ahorita "today | end of day"  # quote | and * in a shell; commas don't need quotes
+printf "today\ntomorrow\n" | ahorita  # evaluates non-empty lines from stdin
+```
+
+- **Flags before the expression:** flag parsing stops at the first non-flag argument, so `ahorita now + 2d -t date` treats `-t date` as part of the expression. Put flags first (`ahorita -t date now + 2d`).
+- **Expressions starting with `-`:** pass `--` to end flag parsing (`ahorita -- -06:00`).
+- **Shell quoting:** `|` and `*` are interpreted by shells (`ahorita "today | end of day"`, `ahorita "2h * 3"`). Use `,` as a shell-safe pipe (`ahorita today, end of day`).
+- **Stdin:** when no expression arguments are passed and stdin is not a terminal, every non-empty line on stdin is evaluated and printed on its own line. In a terminal with no arguments, `ahorita` evaluates `now`.
+
+### Flags
+
+| Flag | Config key | Values | Effect |
+|---|---|---|---|
+| `-t`, `--type` | `type` | `date`, `datetime`, `time`, `range`, `relative` | Output value type |
+| `-f`, `--format` | `format` | pattern or preset (`iso`, `rfc3339`, `unix`, `human`, `short`) | Display format |
+| `--tz` | `tz` | IANA zone (e.g. `America/Mexico_City`, `UTC`) | Default timezone (defaults to system zone) |
+| `--lang` | `lang` | `en`, `es` | Default language (defaults from `LC_ALL` / `LANG`, else `en`) |
+| `--strict` | `strict` | `true`, `false` (flag alone sets `true`) | Error on ambiguous input or out-of-order stages |
+| `--day-week-start` | `week_start` | weekday name in English or Spanish | First day of the week (default `monday`) |
+| `--week-one` | `week_one` | `iso`, `first-day`, `full`, `days` | First week of period rule (default `iso`) |
+| `--month-overflow` | `month_overflow` | `clamp`, `overflow` | Month arithmetic end-of-month rule (default `clamp`) |
+| `--count-inclusive` | `count_inclusive` | `true`, `false` (flag alone sets `true`) | Include both end dates when counting |
+| `-n` | — | — | Omit trailing newline |
+| `-c` | — | — | Copy output (without trailing newline) to clipboard |
+| `--json` | — | — | Print JSON (`Result` object, one per line) |
+| `--explain` | — | — | Print evaluation stages to stderr (or inside JSON with `--json`) |
+| `--config-file` | — | path | Config file path (errors if missing) |
+| `-o`, `--output` | — | path | Write output to file instead of stdout |
+
+### Environment variables & config file
+
+Precedence is **flag > environment variable > config file > default**.
+
+- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`.
+- `AHORITA_CONFIG` overrides the config file path (errors if missing). Standard `TZ`, `LC_ALL`, and `LANG` (values starting with `es` default to Spanish) are also honored.
+- Default config file path: `$XDG_CONFIG_HOME/ahorita/config.toml`, or `~/.config/ahorita/config.toml`. Missing default files are ignored.
+
+Sample `~/.config/ahorita/config.toml`:
+
+```toml
+# Output formatting
+# type = "date"
+# format = "human"
+
+# Locale and timezone
+# tz = "America/Mexico_City"
+# lang = "es"
+
+# Evaluation rules
+# strict = false
+# week_start = "monday"
+# week_one = "iso"
+# month_overflow = "clamp"
+# count_inclusive = false
+```
 
 ## Output types
 

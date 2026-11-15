@@ -18,9 +18,9 @@ type Expr struct {
 
 // Error is a parse or evaluation error with source position and expected next tokens.
 type Error struct {
-	Pos      int // byte offset, -1 if unknown
-	Msg      string
-	Expected []string // what could have come next (parse errors)
+	Pos      int      `json:"pos"`                // byte offset, -1 if unknown
+	Msg      string   `json:"message"`            // human-readable error message
+	Expected []string `json:"expected,omitempty"` // what could have come next (parse errors)
 }
 
 func (e *Error) Error() string {

@@ -24,4 +24,4 @@
 - [ ] The plan's tracker and the status table in `plans/README.md` are up to date
 
 ## Deploy
-`go install` only for now (decision 5.9). No release tooling.
+`go install github.com/primissus/ahorita/cmd/ahorita@latest` (decision 5.9). No release tooling.
