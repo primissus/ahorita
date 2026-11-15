@@ -103,6 +103,13 @@ func TestRun(t *testing.T) {
 			wantStdout: "now\n",
 		},
 		{
+			name:       "-t relative today + 2d",
+			args:       withTZ("-t", "relative", "today + 2d"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "in 2 days\n",
+		},
+		{
 			name:       "-f dd-MM-yyyy 2026-06-02",
 			args:       withTZ("-f", "dd-MM-yyyy", "2026-06-02"),
 			terminal:   true,
@@ -515,4 +522,106 @@ func TestClipboard(t *testing.T) {
 			t.Errorf("clipboard input = %q, want 2026-11-14", gotInput)
 		}
 	})
+}
+
+func TestErrorMessages(t *testing.T) {
+	disallowed := []string{
+		"runtime error",
+		"%!",
+		"panic",
+		"goroutine",
+		"expr.Value",
+		"expr.Error",
+		"{Kind:",
+	}
+
+	cases := []struct {
+		name     string
+		args     []string
+		wantExit int
+		wantErr  string
+	}{
+		{
+			name:     "now_plus",
+			args:     withTZ("now +"),
+			wantExit: 1,
+			wantErr:  "ahorita: unexpected end of input\n  now +\n       ^\n  expected: a value\n",
+		},
+		{
+			name:     "now_plus_2x",
+			args:     withTZ("now + 2x"),
+			wantExit: 1,
+			wantErr:  "ahorita: unknown unit \"x\"\n  now + 2x\n        ^\n",
+		},
+		{
+			name:     "today_plus_today",
+			args:     withTZ("today + today"),
+			wantExit: 1,
+			wantErr:  "ahorita: cannot add a date to a date\n  today + today\n  ^\n",
+		},
+		{
+			name:     "3_months_to_days",
+			args:     withTZ("3 months to days"),
+			wantExit: 1,
+			wantErr:  "ahorita: a month has no fixed length; give a start: during 3 months, to days\n  3 months to days\n           ^\n",
+		},
+		{
+			name:     "now_to_Atlantis",
+			args:     withTZ("now to Atlantis"),
+			wantExit: 1,
+			wantErr:  "ahorita: unknown timezone or word \"Atlantis\"\n  now to Atlantis\n         ^\n",
+		},
+		{
+			name:     "2026-13-45",
+			args:     withTZ("2026-13-45"),
+			wantExit: 1,
+			wantErr:  "ahorita: invalid date \"2026-13-45\"\n  2026-13-45\n  ^\n",
+		},
+		{
+			name:     "week_54",
+			args:     withTZ("week 54"),
+			wantExit: 1,
+			wantErr:  "ahorita: week 54 starts after the period ends\n  week 54\n  ^\n",
+		},
+		{
+			name:     "type_date_duration",
+			args:     withTZ("-t", "date", "2h"),
+			wantExit: 1,
+			wantErr:  "ahorita: -t date doesn't apply to a duration\n",
+		},
+		{
+			name:     "format_bad_token",
+			args:     withTZ("-f", "dd-QQ-yyyy", "today"),
+			wantExit: 1,
+			wantErr:  "ahorita: unsupported pattern token \"QQ\" (letter \"Q\"); supported tokens: yyyy, yy, MMMM, MMM, MM, M, dd, d, EEEE, EEE, HH, H, hh, h, mm, m, ss, s, a, XXX, 'text'\n",
+		},
+		{
+			name:     "parentheses",
+			args:     withTZ("(today)"),
+			wantExit: 1,
+			wantErr:  "ahorita: parentheses aren't supported\n  (today)\n  ^\n",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errBuf bytes.Buffer
+			code := run(tc.args, strings.NewReader(""), &out, &errBuf, testEnv(t, true))
+			if code != tc.wantExit {
+				t.Fatalf("exit code = %d, want %d; stderr=%q", code, tc.wantExit, errBuf.String())
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", out.String())
+			}
+			got := errBuf.String()
+			if got != tc.wantErr {
+				t.Errorf("stderr =\n%q\nwant:\n%q", got, tc.wantErr)
+			}
+			for _, bad := range disallowed {
+				if strings.Contains(got, bad) {
+					t.Errorf("stderr leaked Go internal token %q in %q", bad, got)
+				}
+			}
+		})
+	}
 }

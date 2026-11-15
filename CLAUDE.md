@@ -2,7 +2,7 @@
 
 Date/time calculator in Go. One expression engine, two front ends: a CLI (`ahorita "now + 2d"`) and a GUI calculator (later). See README.md for the target feature set and expression examples.
 
-Status: design recorded, pre-code. The build is split into plans in `plans/`; start at `plans/README.md`. Don't scaffold dirs or packages until a plan step needs them.
+Status: v1 (engine + CLI, plans 1–8) works and is verified; business days (plan 9), recurrence and cron (plan 10), and the web GUI (plan 11) are next. See `plans/README.md`.
 
 Open design questions live in `QUESTIONS.md` (original batches) and `QUESTIONS-2.md` (gaps and follow-ups). When answers arrive, record them in `.context/` and update the status tables. Don't edit the user's answers. An unanswered question stays `[PENDING]` in `.context/`.
 

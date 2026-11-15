@@ -3,7 +3,7 @@
 > The traps that already bit you. Each one saves an hour of the agent's time
 > (and yours).
 
-Nothing has bitten yet. These are known domain traps to design around:
+Known domain traps and v1 gotchas caught during design and acceptance testing:
 
 ## Month arithmetic overflows
 - **Happens when:** `2026-01-31 + 1M`
@@ -47,3 +47,14 @@ Nothing has bitten yet. These are known domain traps to design around:
 - `yesterday` has no time of day; `2d ago` does (decision 3.8).
 - `last week` is a span, not a date (decision 2.3).
 - `on aug 20th` can be in the past (decision 3.2).
+- `20 ago` under English is not a strict-mode word tie: the normalizer resolves `ago` next to a bare number as `august` (`2026-08-20`), while bare `ago` sets `Tie` (plan 2 step 5).
+
+## `time.Date` normalizes a DST gap backward in non-strict mode
+- **Happens when:** evaluating `2026-03-08 02:30` in `America/New_York` (02:00 → 03:00 jump) with `Strict: false`.
+- **Real cause:** Go's `time.Date` chooses the pre-transition offset and yields `2026-03-08T01:30:00-05:00` instead of `03:30:00-04:00`.
+- **Fix:** documented for non-strict mode; `--strict` (`wall()` in `expr/eval.go`) errors with `Pos` pointing at the time literal (`11`).
+
+## Recurrence and cron keywords aren't recognized before plan 10
+- **Happens when:** evaluating `every monday`, `every day 2nd`, or `every monday, to cron` in v1.
+- **Real cause:** plan 3's parser left `every` and `cron` out of the keyword tables until plan 10, so those README examples fail with unknown-word or parse errors instead of `"aren't available yet"` (unlike business-day examples, which already parse and return `"business days aren't available yet"`).
+- **Fix:** tracked as 3 `BUG:` skips in `expr/readme_test.go` until plan 10 adds recurrence and cron syntax.

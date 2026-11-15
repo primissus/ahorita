@@ -12,7 +12,7 @@ A date/time expression engine in Go that reads English and Spanish. A CLI (v1) a
 - External services: none
 
 ## Folder map
-Currently exists: `go.mod`, `.gitignore`, `plans/`, `expr/` (`token.go`, `lexer.go`, `lexer_test.go`, `normalize.go`, `normalize_test.go`, `vocab_en.go`, `vocab_es.go`, `ast.go`, `parser.go`, `parser_test.go`, `print.go`, `print_test.go`, `value.go`, `value_test.go`, `context.go`, `eval.go`, `eval_test.go`, `arith.go`, `arith_test.go`, `period.go`, `period_test.go`, `format.go`, `format_test.go`, `pattern.go`, `pattern_test.go`, `result.go`, `result_test.go`, `zone.go`, `zones_data.go` [generated], `zones_gen.go`, `zone_test.go`, `cases_test.go`), and `cmd/ahorita/` (`config.go`, `config_test.go`, `main.go`, `main_test.go`). Each plan in `plans/` creates only what it needs. Target:
+Currently exists: `go.mod`, `.gitignore`, `README.md`, `CLAUDE.md`, `CASES.md`, `QUESTIONS.md`, `QUESTIONS-2.md`, `.context/`, `plans/`, `expr/` (`token.go`, `lexer.go`, `lexer_test.go`, `normalize.go`, `normalize_test.go`, `vocab_en.go`, `vocab_es.go`, `ast.go`, `parser.go`, `parser_test.go`, `print.go`, `print_test.go`, `value.go`, `value_test.go`, `context.go`, `eval.go`, `eval_test.go`, `arith.go`, `arith_test.go`, `period.go`, `period_test.go`, `format.go`, `format_test.go`, `pattern.go`, `pattern_test.go`, `result.go`, `result_test.go`, `zone.go`, `zones_data.go` [generated], `zones_gen.go`, `zone_test.go`, `cases_test.go`, `readme_test.go`, `spanish_test.go`, `edge_test.go`, `strict_test.go`), and `cmd/ahorita/` (`config.go`, `config_test.go`, `main.go`, `main_test.go`). Each plan in `plans/` creates only what it needs. Target:
 
 ```
 go.mod
