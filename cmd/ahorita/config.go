@@ -17,13 +17,15 @@ import (
 )
 
 type settings struct {
-	cfg       expr.Config
-	loc       *time.Location
-	opts      expr.Options // Type, Pattern
-	calendars []string
+	cfg        expr.Config
+	loc        *time.Location
+	opts       expr.Options // Type, Pattern
+	calendars  []string
+	vals       internalsettings.Values
+	configPath string
 	// output switches, flags only:
-	noNewline, copy, json, explain bool
-	output                         string
+	noNewline, copy, json, explain, saveConfig bool
+	output                                     string
 }
 
 type settingValue struct {
@@ -73,6 +75,54 @@ func (cv *calendarFlagValue) Set(val string) error {
 	}
 	cv.v.Calendars = append(cv.v.Calendars, p)
 	return nil
+}
+
+type customFormatValue struct {
+	v    *internalsettings.Values
+	help bool
+}
+
+func (cf *customFormatValue) String() string {
+	if cf.v == nil {
+		return ""
+	}
+	return cf.v.Opts.Pattern
+}
+
+func (cf *customFormatValue) Set(val string) error {
+	trimmed := strings.TrimSpace(val)
+	if strings.EqualFold(trimmed, "help") || trimmed == "?" {
+		cf.help = true
+		return nil
+	}
+	cf.help = false
+	cf.v.Opts.Pattern = val
+	return nil
+}
+
+func customFormatHelp() string {
+	return strings.TrimSpace(`
+Custom format patterns (-F / --custom-format):
+
+Tokens:
+  yyyy, yy       4-digit or 2-digit year        (2026, 26)
+  MMMM, MMM      full or short month name       (November, Nov)
+  MM, M          zero-padded or plain month     (11, 11)
+  dd, d          zero-padded or plain day       (04, 4)
+  EEEE, EEE      full or short weekday          (Saturday, Sat)
+  HH, H          24-hour clock                  (09, 9)
+  hh, h          12-hour clock                  (09, 9)
+  mm, m          minutes                        (05, 5)
+  ss, s          seconds                        (09, 9)
+  a              AM/PM marker                   (PM)
+  XXX            UTC offset                     (-06:00, Z)
+  'text'         literal text ('' for ')        ('at')
+
+Examples:
+  ahorita -F "dd-MM-yyyy" today                 -> 14-11-2026
+  ahorita --custom-format "yyyy/MM/dd HH:mm"    -> 2026/11/14 14:30
+  ahorita -F "EEE, MMM d, yyyy 'at' h:mm a"     -> Sat, Nov 14, 2026 at 2:30 PM
+`)
 }
 
 type helpError struct {
@@ -136,10 +186,14 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 
 	var s settings
 	var configFile string
+	cfv := &customFormatValue{v: &vals}
+	fs.Var(cfv, "F", `custom output pattern, e.g. "dd-MM-yyyy" (pass "help" for tokens)`)
+	fs.Var(cfv, "custom-format", `custom output pattern, e.g. "dd-MM-yyyy" (pass "help" for tokens)`)
 	fs.BoolVar(&s.noNewline, "n", false, "do not print a trailing newline")
 	fs.BoolVar(&s.copy, "c", false, "copy output to clipboard")
 	fs.BoolVar(&s.json, "json", false, "print structured JSON")
 	fs.BoolVar(&s.explain, "explain", false, "print evaluation steps")
+	fs.BoolVar(&s.saveConfig, "save-config", false, "save current settings as defaults to config file")
 	fs.StringVar(&configFile, "config-file", "", "path to config file")
 	fs.StringVar(&s.output, "o", "", "write output to file")
 	fs.StringVar(&s.output, "output", "", "write output to file")
@@ -150,11 +204,16 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 		}
 		return settings{}, nil, err
 	}
+	if cfv.help {
+		return settings{}, nil, helpError{text: customFormatHelp()}
+	}
 
 	s.cfg = vals.Cfg
 	s.loc = vals.Loc
 	s.opts = vals.Opts
 	s.calendars = vals.Calendars
+	s.vals = vals
+	s.configPath, _, _ = resolveConfigPath(args, getenv)
 	return s, fs.Args(), nil
 }
 
@@ -169,7 +228,7 @@ func loadConfigFile(args []string, getenv func(string) string, readFile func(str
 
 	data, err := readFile(path)
 	if err != nil {
-		if !explicit && errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) && (!explicit || hasFlag(args, "save-config")) {
 			return nil
 		}
 		return fmt.Errorf("read config %q: %w", path, err)
@@ -238,10 +297,36 @@ func findConfigFlag(args []string) (string, bool) {
 }
 
 func flagTakesValue(name string) bool {
-	if name == "o" || name == "output" || name == "config-file" {
+	if name == "o" || name == "output" || name == "config-file" || name == "F" || name == "custom-format" {
 		return true
 	}
 	return internalsettings.FlagTakesValue(name)
+}
+
+func hasFlag(args []string, target string) bool {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" || !strings.HasPrefix(arg, "-") || arg == "-" {
+			break
+		}
+		name := strings.TrimPrefix(arg, "--")
+		if name == arg {
+			name = strings.TrimPrefix(arg, "-")
+		}
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			if name[:eq] == target {
+				return true
+			}
+			continue
+		}
+		if name == target {
+			return true
+		}
+		if flagTakesValue(name) {
+			i++
+		}
+	}
+	return false
 }
 
 func parseConfig(path string, data []byte, vals *internalsettings.Values) error {
@@ -327,4 +412,19 @@ func loadDaysOff(paths []string, readFile func(string) ([]byte, error), ctx *exp
 		ctx.Cfg.DaysOff = append(ctx.Cfg.DaysOff, vals...)
 	}
 	return nil
+}
+
+func formatConfig(vals internalsettings.Values) string {
+	defaults := internalsettings.DefaultValues(time.Local)
+	var b strings.Builder
+	for i := range internalsettings.Table {
+		def := &internalsettings.Table[i]
+		cur := def.Get(&vals)
+		defVal := def.Get(&defaults)
+		if cur == defVal {
+			continue
+		}
+		fmt.Fprintf(&b, "%s = %q\n", def.Key, cur)
+	}
+	return b.String()
 }

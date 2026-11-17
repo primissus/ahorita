@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type env struct {
 	readFile        func(string) ([]byte, error)
 	stdinIsTerminal bool
 	writeFile       func(string, []byte, os.FileMode) error
+	mkdirAll        func(string, os.FileMode) error
 	goos            string
 	lookPath        func(string) (string, error)
 	runCmd          func(name string, args []string, input string) error
@@ -34,6 +36,7 @@ func main() {
 		readFile:        os.ReadFile,
 		stdinIsTerminal: isTerminal(os.Stdin),
 		writeFile:       os.WriteFile,
+		mkdirAll:        os.MkdirAll,
 		goos:            runtime.GOOS,
 		lookPath:        exec.LookPath,
 		runCmd:          runClipboardCmd,
@@ -69,6 +72,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 	if e.writeFile == nil {
 		e.writeFile = os.WriteFile
 	}
+	if e.mkdirAll == nil {
+		e.mkdirAll = os.MkdirAll
+	}
 	if e.lookPath == nil {
 		e.lookPath = exec.LookPath
 	}
@@ -101,6 +107,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 	if err := loadDaysOff(s.calendars, e.readFile, &ctx); err != nil {
 		fmt.Fprintf(stderr, "ahorita: %v\n", err)
 		return 2
+	}
+
+	if s.saveConfig {
+		if err := saveConfigFile(s, ctx, e); err != nil {
+			fmt.Fprintf(stderr, "ahorita: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stderr, "saved config to %s\n", s.configPath)
+		if len(rest) == 0 && e.stdinIsTerminal {
+			return 0
+		}
 	}
 
 	var outLines []string
@@ -236,4 +253,24 @@ func copyToClipboard(text string, e env) error {
 		}
 	}
 	return errors.New("no clipboard command found")
+}
+
+func saveConfigFile(s settings, ctx expr.Context, e env) error {
+	if s.configPath == "" {
+		return errors.New("cannot determine config file path")
+	}
+	if s.opts.Pattern != "" {
+		sample := expr.Value{Kind: expr.KDateTime, T: ctx.Now.In(s.loc), Lang: s.cfg.Lang}
+		if _, err := expr.Format(sample, ctx, s.opts); err != nil {
+			return err
+		}
+	}
+	if err := e.mkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	body := formatConfig(s.vals)
+	if err := e.writeFile(s.configPath, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("write config %q: %w", s.configPath, err)
+	}
+	return nil
 }

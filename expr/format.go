@@ -112,14 +112,14 @@ func renderValue(v Value, ctx Context, pattern string) (string, error) {
 	}
 
 	switch preset {
-	case "rfc3339":
+	case "rfc3339", "rfc":
 		switch v.Kind {
 		case KDate:
 			return dateOnly(v.T).Format(time.RFC3339), nil
 		case KDateTime:
 			return v.T.Format(time.RFC3339), nil
 		default:
-			return "", fmt.Errorf("preset %q doesn't apply to %s", "rfc3339", kindName(v.Kind))
+			return "", fmt.Errorf("preset %q doesn't apply to %s", preset, kindName(v.Kind))
 		}
 	case "unix":
 		switch v.Kind {

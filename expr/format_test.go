@@ -151,6 +151,7 @@ func TestPreset(t *testing.T) {
 		},
 		{name: "now unix en", input: "now", cfgLang: EN, preset: "unix", want: "1794688200"},
 		{name: "today rfc3339 en", input: "today", cfgLang: EN, preset: "rfc3339", want: "2026-11-14T00:00:00-06:00"},
+		{name: "today rfc en", input: "today", cfgLang: EN, preset: "rfc", want: "2026-11-14T00:00:00-06:00"},
 		{name: "now iso en", input: "now", cfgLang: EN, preset: "iso", want: "2026-11-14T14:30:00-06:00"},
 
 		// Additional preset coverage

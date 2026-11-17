@@ -65,7 +65,7 @@ var Table = []Def{
 		Key:   "format",
 		Flags: []string{"f", "format"},
 		Env:   "AHORITA_FORMAT",
-		Usage: "output pattern or preset (iso, rfc3339, unix, human, short)",
+		Usage: "output pattern or preset (iso, rfc, rfc3339, unix, human, short)",
 		Get:   func(v *Values) string { return v.Opts.Pattern },
 		Apply: func(v *Values, value string) error {
 			v.Opts.Pattern = value
