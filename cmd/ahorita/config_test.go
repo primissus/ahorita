@@ -564,3 +564,66 @@ func TestConfigFile(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigModeLoad(t *testing.T) {
+	t.Run("normalizeConfigArgs", func(t *testing.T) {
+		cases := []struct {
+			args []string
+			want []string
+		}{
+			{args: []string{"--config"}, want: []string{"--config=list"}},
+			{args: []string{"-config"}, want: []string{"--config=list"}},
+			{args: []string{"--config", "-n"}, want: []string{"--config=list", "-n"}},
+			{args: []string{"--config-file", "/tmp/c.toml", "--config"}, want: []string{"--config-file", "/tmp/c.toml", "--config=list"}},
+			{args: []string{"--config", "set", "format=rfc"}, want: []string{"--config", "set", "format=rfc"}},
+		}
+		for _, tc := range cases {
+			got := normalizeConfigArgs(tc.args)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("normalizeConfigArgs(%v) = %v, want %v", tc.args, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("missing explicit config-file allowed with --config", func(t *testing.T) {
+		s, rest, err := load([]string{"--config-file", "/tmp/new.toml", "--config", "set", "format=rfc"}, envMap(nil), filesMap(nil))
+		if err != nil {
+			t.Fatalf("load unexpected error: %v", err)
+		}
+		if s.configCmd != "set" || !reflect.DeepEqual(rest, []string{"format=rfc"}) {
+			t.Errorf("got configCmd=%q rest=%v, want set [format=rfc]", s.configCmd, rest)
+		}
+		if s.configPath != "/tmp/new.toml" {
+			t.Errorf("configPath = %q, want /tmp/new.toml", s.configPath)
+		}
+	})
+
+	t.Run("fileVals ignores AHORITA_* env vars while s.vals includes them", func(t *testing.T) {
+		s, _, err := load(
+			[]string{"--config-file", "/tmp/c.toml", "--config", "get", "format"},
+			envMap(map[string]string{"AHORITA_FORMAT": "human"}),
+			filesMap(map[string]string{"/tmp/c.toml": "format = \"rfc\"\n"}),
+		)
+		if err != nil {
+			t.Fatalf("load unexpected error: %v", err)
+		}
+		if s.fileVals.Opts.Pattern != "rfc" {
+			t.Errorf("fileVals.Opts.Pattern = %q, want rfc", s.fileVals.Opts.Pattern)
+		}
+		if s.vals.Opts.Pattern != "human" {
+			t.Errorf("vals.Opts.Pattern = %q, want human", s.vals.Opts.Pattern)
+		}
+		if !s.fileKeys["format"] {
+			t.Errorf("fileKeys = %v, want format=true", s.fileKeys)
+		}
+	})
+
+	t.Run("formatConfigWithKeys keeps explicit defaults", func(t *testing.T) {
+		v := defaultValuesForEnv(envMap(nil))
+		v.Cfg.Lang = expr.EN
+		got := formatConfigWithKeys(v, map[string]bool{"lang": true})
+		if got != "lang = \"en\"\n" {
+			t.Errorf("formatConfigWithKeys = %q, want %q", got, "lang = \"en\"\n")
+		}
+	})
+}

@@ -116,3 +116,77 @@ func TestParseDaysOff(t *testing.T) {
 		t.Fatalf("icsVals = %+v, want 2026-11-17", icsVals)
 	}
 }
+
+func TestLookupAndReset(t *testing.T) {
+	lookupCases := []struct {
+		input   string
+		wantKey string
+		wantOK  bool
+	}{
+		{input: "format", wantKey: "format", wantOK: true},
+		{input: "FORMAT", wantKey: "format", wantOK: true},
+		{input: "TZ", wantKey: "tz", wantOK: true},
+		{input: "WEEK_START", wantKey: "week_start", wantOK: true},
+		{input: "AHORITA_FORMAT", wantKey: "format", wantOK: true},
+		{input: "AHORITA_WEEK_START", wantKey: "week_start", wantOK: true},
+		{input: "day-week-start", wantKey: "week_start", wantOK: true},
+		{input: "show-tz", wantKey: "show_timezone", wantOK: true},
+		{input: "custom-format", wantKey: "format", wantOK: true},
+		{input: "timezone", wantKey: "tz", wantOK: true},
+		{input: "language", wantKey: "lang", wantOK: true},
+		{input: "calendars", wantKey: "calendar", wantOK: true},
+		{input: "f", wantKey: "format", wantOK: true},
+		{input: "t", wantKey: "type", wantOK: true},
+		{input: "z", wantKey: "show_timezone", wantOK: true},
+		{input: "", wantOK: false},
+		{input: "ahorita_", wantOK: false},
+		{input: "unknown", wantOK: false},
+	}
+
+	for _, tc := range lookupCases {
+		def, ok := Lookup(tc.input)
+		if ok != tc.wantOK {
+			t.Errorf("Lookup(%q) ok = %v, want %v", tc.input, ok, tc.wantOK)
+			continue
+		}
+		if ok && def.Key != tc.wantKey {
+			t.Errorf("Lookup(%q).Key = %q, want %q", tc.input, def.Key, tc.wantKey)
+		}
+	}
+
+	defaults := DefaultValues(time.UTC)
+	v := DefaultValues(time.UTC)
+	changes := map[string]string{
+		"type":            "date",
+		"format":          "human",
+		"tz":              "America/Mexico_City",
+		"show_timezone":   "true",
+		"lang":            "es",
+		"strict":          "true",
+		"week_start":      "sunday",
+		"week_one":        "full",
+		"month_overflow":  "overflow",
+		"count_inclusive": "true",
+		"country":         "US",
+		"weekend":         "friday,saturday",
+		"calendar":        "/tmp/a.txt,/tmp/b.txt",
+	}
+	for k, val := range changes {
+		if err := Apply(&v, k, val); err != nil {
+			t.Fatalf("Apply(%q, %q): %v", k, val, err)
+		}
+	}
+
+	if Reset(&v, "unknown", defaults) {
+		t.Error("Reset(unknown) = true, want false")
+	}
+
+	for k := range changes {
+		if !Reset(&v, strings.ToUpper(k), defaults) {
+			t.Fatalf("Reset(%q) = false, want true", k)
+		}
+	}
+	if !reflect.DeepEqual(v, defaults) {
+		t.Errorf("after resetting all keys, v = %+v, want %+v", v, defaults)
+	}
+}

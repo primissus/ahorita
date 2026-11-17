@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/primissus/ahorita/expr"
+	internalsettings "github.com/primissus/ahorita/internal/settings"
 )
 
 type env struct {
@@ -93,6 +94,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 		return 2
 	}
 
+	if s.configCmd != "" {
+		return runConfig(s, rest, stdout, stderr, e)
+	}
+
 	inputs, err := readInputs(rest, stdin, e.stdinIsTerminal)
 	if err != nil {
 		fmt.Fprintf(stderr, "ahorita: %v\n", err)
@@ -159,6 +164,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 		return exitCode
 	}
 
+	if writeCode := writeOutput(outLines, s, stdout, stderr, e); writeCode != 0 {
+		return writeCode
+	}
+	return exitCode
+}
+
+func writeOutput(outLines []string, s settings, stdout, stderr io.Writer, e env) int {
 	body := strings.Join(outLines, "\n")
 	payload := body
 	if !s.noNewline {
@@ -180,8 +192,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 			return 1
 		}
 	}
-
-	return exitCode
+	return 0
 }
 
 func readInputs(rest []string, stdin io.Reader, stdinIsTerminal bool) ([]string, error) {
@@ -255,22 +266,238 @@ func copyToClipboard(text string, e env) error {
 	return errors.New("no clipboard command found")
 }
 
-func saveConfigFile(s settings, ctx expr.Context, e env) error {
-	if s.configPath == "" {
+func validatePattern(vals internalsettings.Values, now time.Time) error {
+	if vals.Opts.Pattern == "" {
+		return nil
+	}
+	loc := vals.Loc
+	if loc == nil {
+		loc = time.Local
+	}
+	ctx := expr.Context{Now: now, Loc: loc, Cfg: vals.Cfg}
+	sample := expr.Value{Kind: expr.KDateTime, T: now.In(loc), Lang: vals.Cfg.Lang}
+	_, err := expr.Format(sample, ctx, expr.Options{Pattern: vals.Opts.Pattern})
+	return err
+}
+
+func writeConfigFile(path, body string, e env) error {
+	if path == "" {
 		return errors.New("cannot determine config file path")
 	}
-	if s.opts.Pattern != "" {
-		sample := expr.Value{Kind: expr.KDateTime, T: ctx.Now.In(s.loc), Lang: s.cfg.Lang}
-		if _, err := expr.Format(sample, ctx, s.opts); err != nil {
-			return err
-		}
-	}
-	if err := e.mkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
+	if err := e.mkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
-	body := formatConfig(s.vals)
-	if err := e.writeFile(s.configPath, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("write config %q: %w", s.configPath, err)
+	if err := e.writeFile(path, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("write config %q: %w", path, err)
 	}
 	return nil
+}
+
+func saveConfigFile(s settings, ctx expr.Context, e env) error {
+	if err := validatePattern(s.vals, ctx.Now); err != nil {
+		return err
+	}
+	body := formatConfigWithKeys(s.vals, s.fileKeys)
+	return writeConfigFile(s.configPath, body, e)
+}
+
+func runConfig(s settings, rest []string, stdout, stderr io.Writer, e env) int {
+	cmdStr := strings.TrimSpace(s.configCmd)
+	lower := strings.ToLower(cmdStr)
+	for _, prefix := range []string{"get ", "set ", "unset ", "reset "} {
+		if strings.HasPrefix(lower, prefix) {
+			cmd, argStr, _ := strings.Cut(cmdStr, " ")
+			cmdStr = cmd
+			argStr = strings.TrimSpace(argStr)
+			if argStr != "" {
+				var extra []string
+				if strings.EqualFold(cmd, "set") && strings.Contains(argStr, "=") {
+					fields := strings.Fields(argStr)
+					allHaveEq := true
+					for _, f := range fields {
+						if !strings.Contains(f, "=") {
+							allHaveEq = false
+							break
+						}
+					}
+					if allHaveEq {
+						extra = fields
+					} else {
+						extra = []string{argStr}
+					}
+				} else {
+					extra = strings.Fields(argStr)
+				}
+				rest = append(extra, rest...)
+			}
+			break
+		}
+	}
+
+	cmd := strings.ToLower(cmdStr)
+	switch cmd {
+	case "help", "?":
+		fmt.Fprintln(stderr, configHelp())
+		return 2
+	case "list":
+		if len(rest) > 0 {
+			fmt.Fprintln(stderr, "ahorita: usage: ahorita --config list")
+			return 2
+		}
+		return listConfig(s, stdout, stderr, e)
+	case "get":
+		if len(rest) == 0 {
+			return listConfig(s, stdout, stderr, e)
+		}
+		return getConfig(s, rest, stdout, stderr, e)
+	case "set":
+		return setConfig(s, rest, stderr, e)
+	case "unset", "reset":
+		return unsetConfig(s, rest, stderr, e)
+	default:
+		if strings.Contains(cmdStr, "=") {
+			return setConfig(s, append([]string{cmdStr}, rest...), stderr, e)
+		}
+		if _, ok := internalsettings.Lookup(cmdStr); ok {
+			if len(rest) == 0 {
+				return getConfig(s, []string{cmdStr}, stdout, stderr, e)
+			}
+			return setConfig(s, []string{cmdStr, strings.Join(rest, " ")}, stderr, e)
+		}
+		fmt.Fprintf(stderr, "ahorita: unknown --config command or key %q (try --config help)\n", s.configCmd)
+		return 2
+	}
+}
+
+func listConfig(s settings, stdout, stderr io.Writer, e env) int {
+	lines := make([]string, 0, len(internalsettings.Table))
+	for i := range internalsettings.Table {
+		def := &internalsettings.Table[i]
+		lines = append(lines, def.Key+"="+def.Get(&s.fileVals))
+	}
+	return writeOutput(lines, s, stdout, stderr, e)
+}
+
+func getConfig(s settings, rest []string, stdout, stderr io.Writer, e env) int {
+	if len(rest) > 1 {
+		fmt.Fprintln(stderr, "ahorita: usage: ahorita --config get <key>")
+		return 2
+	}
+	rawKey := rest[0]
+	if eq := strings.IndexByte(rawKey, '='); eq >= 0 && rawKey[eq+1:] != "" {
+		fmt.Fprintf(stderr, "ahorita: unexpected value in get %q; use \"ahorita --config set %s\" to set a value\n", rawKey, rawKey)
+		return 2
+	}
+	key := strings.TrimSuffix(rawKey, "=")
+	def, ok := internalsettings.Lookup(key)
+	if !ok {
+		fmt.Fprintf(stderr, "ahorita: unknown config key %q\n", key)
+		return 2
+	}
+	return writeOutput([]string{def.Get(&s.fileVals)}, s, stdout, stderr, e)
+}
+
+type configKV struct {
+	key string
+	val string
+}
+
+func parseSetPairs(rest []string) ([]configKV, bool) {
+	if len(rest) == 0 {
+		return nil, false
+	}
+	if strings.Contains(rest[0], "=") {
+		allHaveEq := true
+		for _, item := range rest {
+			if !strings.Contains(item, "=") {
+				allHaveEq = false
+				break
+			}
+		}
+		if allHaveEq {
+			pairs := make([]configKV, 0, len(rest))
+			for _, item := range rest {
+				k, v, _ := strings.Cut(item, "=")
+				pairs = append(pairs, configKV{key: k, val: v})
+			}
+			return pairs, true
+		}
+		k, v, _ := strings.Cut(rest[0], "=")
+		tail := strings.Join(rest[1:], " ")
+		if v == "" {
+			v = tail
+		} else {
+			v = v + " " + tail
+		}
+		return []configKV{{key: k, val: v}}, true
+	}
+	if len(rest) < 2 {
+		return nil, false
+	}
+	return []configKV{{key: rest[0], val: strings.Join(rest[1:], " ")}}, true
+}
+
+func setConfig(s settings, rest []string, stderr io.Writer, e env) int {
+	pairs, ok := parseSetPairs(rest)
+	if !ok {
+		fmt.Fprintln(stderr, "ahorita: usage: ahorita --config set <key>=<value>")
+		return 2
+	}
+	if s.fileKeys == nil {
+		s.fileKeys = make(map[string]bool)
+	}
+	defaults := defaultValuesForEnv(e.getenv)
+	for _, p := range pairs {
+		def, found := internalsettings.Lookup(p.key)
+		if !found {
+			fmt.Fprintf(stderr, "ahorita: unknown config key %q\n", p.key)
+			return 2
+		}
+		if p.val == "" && (def.Key == "format" || def.Key == "type" || def.Key == "calendar") {
+			internalsettings.Reset(&s.fileVals, def.Key, defaults)
+			delete(s.fileKeys, def.Key)
+			continue
+		}
+		if err := def.Apply(&s.fileVals, p.val); err != nil {
+			fmt.Fprintf(stderr, "ahorita: %v\n", err)
+			return 2
+		}
+		if def.Key == "format" && s.fileVals.Opts.Pattern != "" {
+			if err := validatePattern(s.fileVals, e.now()); err != nil {
+				fmt.Fprintf(stderr, "ahorita: %v\n", err)
+				return 2
+			}
+		}
+		s.fileKeys[def.Key] = true
+	}
+	body := formatConfigWithKeys(s.fileVals, s.fileKeys)
+	if err := writeConfigFile(s.configPath, body, e); err != nil {
+		fmt.Fprintf(stderr, "ahorita: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func unsetConfig(s settings, rest []string, stderr io.Writer, e env) int {
+	if len(rest) == 0 {
+		fmt.Fprintln(stderr, "ahorita: usage: ahorita --config unset <key>...")
+		return 2
+	}
+	defaults := defaultValuesForEnv(e.getenv)
+	for _, rawKey := range rest {
+		key := strings.TrimSuffix(rawKey, "=")
+		def, ok := internalsettings.Lookup(key)
+		if !ok {
+			fmt.Fprintf(stderr, "ahorita: unknown config key %q\n", key)
+			return 2
+		}
+		internalsettings.Reset(&s.fileVals, def.Key, defaults)
+		delete(s.fileKeys, def.Key)
+	}
+	body := formatConfigWithKeys(s.fileVals, s.fileKeys)
+	if err := writeConfigFile(s.configPath, body, e); err != nil {
+		fmt.Fprintf(stderr, "ahorita: %v\n", err)
+		return 2
+	}
+	return 0
 }

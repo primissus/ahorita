@@ -71,12 +71,23 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 | `-c` | — | — | Copy output (without trailing newline) to clipboard |
 | `--json` | — | — | Print JSON (`Result` object, one per line) |
 | `--explain` | — | — | Print evaluation stages to stderr (or inside JSON with `--json`) |
+| `--config` | — | `get`/`set`/`unset`/`list` | Inspect or update persistent config settings (`--config set format=human`) |
 | `--config-file` | — | path | Config file path (errors if missing) |
 | `-o`, `--output` | — | path | Write output to file instead of stdout |
 
 ### Environment variables & config file
 
 Precedence is **flag > environment variable > config file > default**.
+
+Manage persistent settings directly with `--config` (Git-style, accepting canonical keys, `AHORITA_*` names, or flag names):
+
+```sh
+ahorita --config set format=human          # persist a setting (or: set format human)
+ahorita --config set lang=es strict=true   # set multiple keys at once
+ahorita --config get format                # read the configured value
+ahorita --config unset format              # remove a setting from config.toml
+ahorita --config list                      # list all settings (also: ahorita --config)
+```
 
 - Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_SHOW_TIMEZONE`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
 - `AHORITA_CONFIG` overrides the config file path (errors if missing). Standard `TZ`, `LC_ALL`, and `LANG` (values starting with `es` default to Spanish) are also honored.

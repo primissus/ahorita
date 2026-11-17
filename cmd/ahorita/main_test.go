@@ -1030,3 +1030,247 @@ func TestSaveConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestConfigCLI(t *testing.T) {
+	runCfg := func(cfgPath string, extraEnv map[string]string, args ...string) (int, string, string) {
+		e := testEnv(t, true)
+		e.readFile = os.ReadFile
+		if extraEnv != nil {
+			e.getenv = envMap(extraEnv)
+		}
+		fullArgs := append([]string{"--config-file", cfgPath}, args...)
+		var out, errBuf bytes.Buffer
+		code := run(fullArgs, strings.NewReader(""), &out, &errBuf, e)
+		return code, out.String(), errBuf.String()
+	}
+
+	t.Run("set get eval workflow", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "nested", "config.toml")
+
+		code, out, errStr := runCfg(cfgPath, nil, "--config", "set", "tz=America/Mexico_City")
+		if code != 0 || out != "" || errStr != "" {
+			t.Fatalf("set tz: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		code, out, errStr = runCfg(cfgPath, nil, "--config", "set", "format=dd-MM-yyyy")
+		if code != 0 || out != "" || errStr != "" {
+			t.Fatalf("set format: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		code, out, errStr = runCfg(cfgPath, nil, "--config", "get", "format")
+		if code != 0 || out != "dd-MM-yyyy\n" || errStr != "" {
+			t.Fatalf("get format: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		// get reads config file rather than AHORITA_* env overrides
+		code, out, errStr = runCfg(cfgPath, map[string]string{"AHORITA_FORMAT": "human"}, "--config", "get", "format")
+		if code != 0 || out != "dd-MM-yyyy\n" || errStr != "" {
+			t.Fatalf("get format with env: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		code, out, errStr = runCfg(cfgPath, nil, "today")
+		if code != 0 || out != "14-11-2026\n" || errStr != "" {
+			t.Fatalf("eval today: code=%d out=%q err=%q", code, out, errStr)
+		}
+	})
+
+	t.Run("case-insensitive env-style and flag-style keys", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+		for _, args := range [][]string{
+			{"--config", "set", "FORMAT=rfc"},
+			{"--config", "set", "AHORITA_TZ=America/Mexico_City"},
+			{"--config", "set", "day-week-start=sunday"},
+		} {
+			if code, out, errStr := runCfg(cfgPath, nil, args...); code != 0 || out != "" || errStr != "" {
+				t.Fatalf("%v: code=%d out=%q err=%q", args, code, out, errStr)
+			}
+		}
+
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "get", "TZ"); code != 0 || out != "America/Mexico_City\n" || errStr != "" {
+			t.Fatalf("get TZ: code=%d out=%q err=%q", code, out, errStr)
+		}
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "get", "WEEK_START"); code != 0 || out != "sunday\n" || errStr != "" {
+			t.Fatalf("get WEEK_START: code=%d out=%q err=%q", code, out, errStr)
+		}
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "get", "FORMAT"); code != 0 || out != "rfc\n" || errStr != "" {
+			t.Fatalf("get FORMAT: code=%d out=%q err=%q", code, out, errStr)
+		}
+	})
+
+	t.Run("space-separated set and unquoted multi-word values", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "set", "format", "yyyy/MM/dd HH:mm"); code != 0 || errStr != "" {
+			t.Fatalf("set format spaced: code=%d out=%q err=%q", code, out, errStr)
+		}
+		if code, out, _ := runCfg(cfgPath, nil, "--config", "get", "format"); code != 0 || out != "yyyy/MM/dd HH:mm\n" {
+			t.Fatalf("get format: code=%d out=%q", code, out)
+		}
+
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "set", "tz", "Los", "Angeles"); code != 0 || errStr != "" {
+			t.Fatalf("set tz Los Angeles: code=%d out=%q err=%q", code, out, errStr)
+		}
+		if code, out, _ := runCfg(cfgPath, nil, "--config", "get", "tz"); code != 0 || out != "America/Los_Angeles\n" {
+			t.Fatalf("get tz: code=%d out=%q", code, out)
+		}
+
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "set", "format=yyyy/MM/dd", "HH:mm"); code != 0 || errStr != "" {
+			t.Fatalf("set format= unquoted spaces: code=%d out=%q err=%q", code, out, errStr)
+		}
+		if code, out, _ := runCfg(cfgPath, nil, "--config", "get", "format"); code != 0 || out != "yyyy/MM/dd HH:mm\n" {
+			t.Fatalf("get format after unquoted spaces: code=%d out=%q", code, out)
+		}
+	})
+
+	t.Run("shorthand and quoted --config forms", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "format=iso"); code != 0 || errStr != "" {
+			t.Fatalf("shorthand set: code=%d err=%q", code, errStr)
+		}
+		if code, out, errStr := runCfg(cfgPath, nil, "--config", "format"); code != 0 || out != "iso\n" || errStr != "" {
+			t.Fatalf("shorthand get: code=%d out=%q err=%q", code, out, errStr)
+		}
+		if code, _, errStr := runCfg(cfgPath, nil, "--config=set tz=UTC"); code != 0 || errStr != "" {
+			t.Fatalf("quoted --config=set: code=%d err=%q", code, errStr)
+		}
+		if code, out, errStr := runCfg(cfgPath, nil, "--config=get tz"); code != 0 || out != "UTC\n" || errStr != "" {
+			t.Fatalf("quoted --config=get: code=%d out=%q err=%q", code, out, errStr)
+		}
+	})
+
+	t.Run("multiple settings and explicit default persistence", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "set", "lang=es", "strict=true"); code != 0 || errStr != "" {
+			t.Fatalf("multi set: code=%d err=%q", code, errStr)
+		}
+		if code, out, _ := runCfg(cfgPath, nil, "--config", "get", "lang"); code != 0 || out != "es\n" {
+			t.Fatalf("get lang: code=%d out=%q", code, out)
+		}
+		if code, out, _ := runCfg(cfgPath, nil, "--config", "get", "strict"); code != 0 || out != "true\n" {
+			t.Fatalf("get strict: code=%d out=%q", code, out)
+		}
+
+		// Setting lang=en when LANG=es_MX.UTF-8 must persist lang="en" in config.toml.
+		if code, _, errStr := runCfg(cfgPath, map[string]string{"LANG": "es_MX.UTF-8"}, "--config", "set", "lang=en", "strict=false"); code != 0 || errStr != "" {
+			t.Fatalf("explicit default set: code=%d err=%q", code, errStr)
+		}
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", cfgPath, err)
+		}
+		if !strings.Contains(string(data), `lang = "en"`) || !strings.Contains(string(data), `strict = "false"`) {
+			t.Errorf("config.toml =\n%s\nwant lang = \"en\" and strict = \"false\"", string(data))
+		}
+		if code, out, _ := runCfg(cfgPath, map[string]string{"LANG": "es_MX.UTF-8"}, "--config", "get", "lang"); code != 0 || out != "en\n" {
+			t.Fatalf("get lang with LANG=es_MX: code=%d out=%q", code, out)
+		}
+	})
+
+	t.Run("unset removes key and restores default", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "set", "tz=America/Mexico_City", "format=dd-MM-yyyy"); code != 0 || errStr != "" {
+			t.Fatalf("setup set: code=%d err=%q", code, errStr)
+		}
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "unset", "format"); code != 0 || errStr != "" {
+			t.Fatalf("unset format: code=%d err=%q", code, errStr)
+		}
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if strings.Contains(string(data), "format =") {
+			t.Errorf("config.toml still contains format:\n%s", string(data))
+		}
+		if code, out, _ := runCfg(cfgPath, nil, "today"); code != 0 || out != "2026-11-14\n" {
+			t.Fatalf("eval today after unset: code=%d out=%q", code, out)
+		}
+
+		// Empty set on format/type/calendar unsets it.
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "set", "format=human"); code != 0 || errStr != "" {
+			t.Fatalf("set format=human: code=%d err=%q", code, errStr)
+		}
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "set", "format="); code != 0 || errStr != "" {
+			t.Fatalf("set format=: code=%d err=%q", code, errStr)
+		}
+		data, err = os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if strings.Contains(string(data), "format =") {
+			t.Errorf("config.toml still contains format after empty set:\n%s", string(data))
+		}
+	})
+
+	t.Run("list get-empty and bare --config", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "set", "format=human", "country=US"); code != 0 || errStr != "" {
+			t.Fatalf("setup set: code=%d err=%q", code, errStr)
+		}
+
+		_, outList, errList := runCfg(cfgPath, nil, "--config", "list")
+		codeGet, outGet, errGet := runCfg(cfgPath, nil, "--config", "get")
+		codeBare, outBare, errBare := runCfg(cfgPath, nil, "--config")
+		if codeGet != 0 || codeBare != 0 || errList != "" || errGet != "" || errBare != "" {
+			t.Fatalf("list variants failed: codeGet=%d codeBare=%d errs=%q/%q/%q", codeGet, codeBare, errList, errGet, errBare)
+		}
+		if outList != outGet || outList != outBare {
+			t.Fatalf("list outputs differ:\nlist:\n%s\nget:\n%s\nbare:\n%s", outList, outGet, outBare)
+		}
+		if !strings.Contains(outList, "format=human\n") || !strings.Contains(outList, "country=US\n") {
+			t.Errorf("list output missing expected settings:\n%s", outList)
+		}
+	})
+
+	t.Run("help and error cases preserve existing config", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		if code, _, errStr := runCfg(cfgPath, nil, "--config", "set", "format=human"); code != 0 || errStr != "" {
+			t.Fatalf("setup set: code=%d err=%q", code, errStr)
+		}
+		before, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+
+		code, out, errStr := runCfg(cfgPath, nil, "--config", "help")
+		if code != 2 || out != "" || !strings.Contains(errStr, "Config commands:") {
+			t.Errorf("help: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		errCases := []struct {
+			name    string
+			args    []string
+			wantErr string
+		}{
+			{name: "get unknown", args: []string{"--config", "get", "nope"}, wantErr: "unknown config key"},
+			{name: "set unknown", args: []string{"--config", "set", "nope=1"}, wantErr: "unknown config key"},
+			{name: "unset unknown", args: []string{"--config", "unset", "nope"}, wantErr: "unknown config key"},
+			{name: "set invalid tz", args: []string{"--config", "set", "tz=Nowhere"}, wantErr: "invalid tz"},
+			{name: "set invalid format", args: []string{"--config", "set", "format=dd-QQ-yyyy"}, wantErr: "unsupported pattern token"},
+			{name: "get with value", args: []string{"--config", "get", "format=rfc"}, wantErr: "unexpected value in get"},
+			{name: "set missing args", args: []string{"--config", "set"}, wantErr: "usage:"},
+			{name: "set missing value", args: []string{"--config", "set", "format"}, wantErr: "usage:"},
+			{name: "unset missing args", args: []string{"--config", "unset"}, wantErr: "usage:"},
+			{name: "unknown command", args: []string{"--config", "bogus"}, wantErr: "unknown --config command"},
+		}
+		for _, tc := range errCases {
+			t.Run(tc.name, func(t *testing.T) {
+				c, o, e := runCfg(cfgPath, nil, tc.args...)
+				if c != 2 || o != "" || !strings.Contains(e, tc.wantErr) {
+					t.Errorf("%v: code=%d out=%q err=%q, want code 2 and %q", tc.args, c, o, e, tc.wantErr)
+				}
+			})
+		}
+
+		after, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if string(after) != string(before) {
+			t.Errorf("config.toml changed after error cases:\nbefore:\n%s\nafter:\n%s", string(before), string(after))
+		}
+	})
+}

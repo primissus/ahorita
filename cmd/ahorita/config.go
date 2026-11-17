@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -22,7 +23,10 @@ type settings struct {
 	opts       expr.Options // Type, Pattern
 	calendars  []string
 	vals       internalsettings.Values
+	fileVals   internalsettings.Values
+	fileKeys   map[string]bool
 	configPath string
+	configCmd  string
 	// output switches, flags only:
 	noNewline, copy, json, explain, saveConfig bool
 	output                                     string
@@ -125,12 +129,78 @@ Examples:
 `)
 }
 
+func configHelp() string {
+	var b strings.Builder
+	b.WriteString("Config commands:\n")
+	b.WriteString("  ahorita --config set <key>=<value>   Set a config value (or: set <key> <value>)\n")
+	b.WriteString("  ahorita --config get <key>           Print a config value\n")
+	b.WriteString("  ahorita --config unset <key>         Remove a setting from the config file\n")
+	b.WriteString("  ahorita --config list                List all settings (also: --config)\n")
+	b.WriteString("\nKeys:\n")
+	for i := range internalsettings.Table {
+		def := &internalsettings.Table[i]
+		fmt.Fprintf(&b, "  %-16s %s\n", def.Key, def.Usage)
+	}
+	return strings.TrimSpace(b.String())
+}
+
 type helpError struct {
 	text string
 }
 
 func (e helpError) Error() string {
 	return e.text
+}
+
+func defaultValuesForEnv(getenv func(string) string) internalsettings.Values {
+	vals := internalsettings.DefaultValues(time.Local)
+	if getenv == nil {
+		return vals
+	}
+	lc := getenv("LC_ALL")
+	if lc == "" {
+		lc = getenv("LANG")
+	}
+	if strings.HasPrefix(strings.ToLower(lc), "es") {
+		vals.Cfg.Lang = expr.ES
+	}
+	return vals
+}
+
+func cloneValues(v internalsettings.Values) internalsettings.Values {
+	out := v
+	out.Cfg.Weekend = slices.Clone(v.Cfg.Weekend)
+	out.Calendars = slices.Clone(v.Calendars)
+	return out
+}
+
+func normalizeConfigArgs(args []string) []string {
+	out := slices.Clone(args)
+	for i := 0; i < len(out); i++ {
+		arg := out[i]
+		if arg == "--" || !strings.HasPrefix(arg, "-") || arg == "-" {
+			break
+		}
+		name := strings.TrimPrefix(arg, "--")
+		if name == arg {
+			name = strings.TrimPrefix(arg, "-")
+		}
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			continue
+		}
+		if name == "config" {
+			if i+1 >= len(out) || strings.HasPrefix(out[i+1], "-") {
+				out[i] = "--config=list"
+				continue
+			}
+			i++
+			continue
+		}
+		if flagTakesValue(name) {
+			i++
+		}
+	}
+	return out
 }
 
 func load(args []string, getenv func(string) string, readFile func(string) ([]byte, error)) (settings, []string, error) {
@@ -141,18 +211,14 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 		readFile = func(string) ([]byte, error) { return nil, os.ErrNotExist }
 	}
 
-	vals := internalsettings.DefaultValues(time.Local)
-	lc := getenv("LC_ALL")
-	if lc == "" {
-		lc = getenv("LANG")
-	}
-	if strings.HasPrefix(strings.ToLower(lc), "es") {
-		vals.Cfg.Lang = expr.ES
-	}
+	args = normalizeConfigArgs(args)
+	vals := defaultValuesForEnv(getenv)
 
-	if err := loadConfigFile(args, getenv, readFile, &vals); err != nil {
+	fileKeys, err := loadConfigFile(args, getenv, readFile, &vals)
+	if err != nil {
 		return settings{}, nil, err
 	}
+	fileVals := cloneValues(vals)
 
 	for i := range internalsettings.Table {
 		def := &internalsettings.Table[i]
@@ -194,6 +260,7 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 	fs.BoolVar(&s.json, "json", false, "print structured JSON")
 	fs.BoolVar(&s.explain, "explain", false, "print evaluation steps")
 	fs.BoolVar(&s.saveConfig, "save-config", false, "save current settings as defaults to config file")
+	fs.StringVar(&s.configCmd, "config", "", "get, set, unset, or list config settings (e.g. --config set format=rfc)")
 	fs.StringVar(&configFile, "config-file", "", "path to config file")
 	fs.StringVar(&s.output, "o", "", "write output to file")
 	fs.StringVar(&s.output, "output", "", "write output to file")
@@ -213,25 +280,27 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 	s.opts = vals.Opts
 	s.calendars = vals.Calendars
 	s.vals = vals
+	s.fileVals = fileVals
+	s.fileKeys = fileKeys
 	s.configPath, _, _ = resolveConfigPath(args, getenv)
 	return s, fs.Args(), nil
 }
 
-func loadConfigFile(args []string, getenv func(string) string, readFile func(string) ([]byte, error), vals *internalsettings.Values) error {
+func loadConfigFile(args []string, getenv func(string) string, readFile func(string) ([]byte, error), vals *internalsettings.Values) (map[string]bool, error) {
 	path, explicit, err := resolveConfigPath(args, getenv)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if path == "" {
-		return nil
+		return make(map[string]bool), nil
 	}
 
 	data, err := readFile(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) && (!explicit || hasFlag(args, "save-config")) {
-			return nil
+		if errors.Is(err, fs.ErrNotExist) && (!explicit || hasFlag(args, "save-config") || hasFlag(args, "config")) {
+			return make(map[string]bool), nil
 		}
-		return fmt.Errorf("read config %q: %w", path, err)
+		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
 	return parseConfig(path, data, vals)
@@ -297,7 +366,7 @@ func findConfigFlag(args []string) (string, bool) {
 }
 
 func flagTakesValue(name string) bool {
-	if name == "o" || name == "output" || name == "config-file" || name == "F" || name == "custom-format" {
+	if name == "o" || name == "output" || name == "config-file" || name == "config" || name == "F" || name == "custom-format" {
 		return true
 	}
 	return internalsettings.FlagTakesValue(name)
@@ -329,7 +398,8 @@ func hasFlag(args []string, target string) bool {
 	return false
 }
 
-func parseConfig(path string, data []byte, vals *internalsettings.Values) error {
+func parseConfig(path string, data []byte, vals *internalsettings.Values) (map[string]bool, error) {
+	keys := make(map[string]bool)
 	lines := strings.Split(string(data), "\n")
 	for i, rawLine := range lines {
 		lineNum := i + 1
@@ -339,26 +409,27 @@ func parseConfig(path string, data []byte, vals *internalsettings.Values) error 
 		}
 		eq := strings.IndexByte(line, '=')
 		if eq < 0 {
-			return fmt.Errorf("%s:%d: expected key = value", path, lineNum)
+			return nil, fmt.Errorf("%s:%d: expected key = value", path, lineNum)
 		}
 		key := strings.TrimSpace(line[:eq])
 		if key == "" {
-			return fmt.Errorf("%s:%d: expected key = value", path, lineNum)
+			return nil, fmt.Errorf("%s:%d: expected key = value", path, lineNum)
 		}
 		rawVal := strings.TrimSpace(line[eq+1:])
 		val, err := parseConfigValue(rawVal)
 		if err != nil {
-			return fmt.Errorf("%s:%d: %w", path, lineNum, err)
+			return nil, fmt.Errorf("%s:%d: %w", path, lineNum, err)
 		}
 		def, ok := internalsettings.ByKey(key)
 		if !ok {
-			return fmt.Errorf("%s:%d: unknown key %q", path, lineNum, key)
+			return nil, fmt.Errorf("%s:%d: unknown key %q", path, lineNum, key)
 		}
 		if err := def.Apply(vals, val); err != nil {
-			return fmt.Errorf("%s:%d: %w", path, lineNum, err)
+			return nil, fmt.Errorf("%s:%d: %w", path, lineNum, err)
 		}
+		keys[def.Key] = true
 	}
-	return nil
+	return keys, nil
 }
 
 func parseConfigValue(raw string) (string, error) {
@@ -415,13 +486,17 @@ func loadDaysOff(paths []string, readFile func(string) ([]byte, error), ctx *exp
 }
 
 func formatConfig(vals internalsettings.Values) string {
+	return formatConfigWithKeys(vals, nil)
+}
+
+func formatConfigWithKeys(vals internalsettings.Values, keepKeys map[string]bool) string {
 	defaults := internalsettings.DefaultValues(time.Local)
 	var b strings.Builder
 	for i := range internalsettings.Table {
 		def := &internalsettings.Table[i]
 		cur := def.Get(&vals)
 		defVal := def.Get(&defaults)
-		if cur == defVal {
+		if !keepKeys[def.Key] && cur == defVal {
 			continue
 		}
 		fmt.Fprintf(&b, "%s = %q\n", def.Key, cur)

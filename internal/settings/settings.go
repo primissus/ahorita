@@ -350,6 +350,86 @@ func ByKey(key string) (*Def, bool) {
 	return nil, false
 }
 
+// Lookup finds a setting definition by canonical key, flag name, env var name,
+// or common alias (case-insensitive, '-' and '_' treated interchangeably).
+func Lookup(name string) (*Def, bool) {
+	norm := strings.ToLower(strings.TrimSpace(name))
+	norm = strings.ReplaceAll(norm, "-", "_")
+	norm = strings.TrimPrefix(norm, "ahorita_")
+	if norm == "" {
+		return nil, false
+	}
+
+	switch norm {
+	case "day_week_start":
+		norm = "week_start"
+	case "show_tz":
+		norm = "show_timezone"
+	case "custom_format":
+		norm = "format"
+	case "timezone":
+		norm = "tz"
+	case "language":
+		norm = "lang"
+	case "calendars":
+		norm = "calendar"
+	}
+
+	if def, ok := ByKey(norm); ok {
+		return def, true
+	}
+	for i := range Table {
+		for _, fl := range Table[i].Flags {
+			if strings.ReplaceAll(strings.ToLower(fl), "-", "_") == norm {
+				return &Table[i], true
+			}
+		}
+	}
+	return nil, false
+}
+
+// Reset restores the setting named by key on v to its value in defaults.
+func Reset(v *Values, key string, defaults Values) bool {
+	if v == nil {
+		return false
+	}
+	def, ok := Lookup(key)
+	if !ok {
+		return false
+	}
+	switch def.Key {
+	case "type":
+		v.Opts.Type = defaults.Opts.Type
+	case "format":
+		v.Opts.Pattern = defaults.Opts.Pattern
+	case "tz":
+		v.Loc = defaults.Loc
+	case "show_timezone":
+		v.Opts.ShowTimezone = defaults.Opts.ShowTimezone
+	case "lang":
+		v.Cfg.Lang = defaults.Cfg.Lang
+	case "strict":
+		v.Cfg.Strict = defaults.Cfg.Strict
+	case "week_start":
+		v.Cfg.WeekStart = defaults.Cfg.WeekStart
+	case "week_one":
+		v.Cfg.WeekOne = defaults.Cfg.WeekOne
+	case "month_overflow":
+		v.Cfg.MonthOverflow = defaults.Cfg.MonthOverflow
+	case "count_inclusive":
+		v.Cfg.CountInclusive = defaults.Cfg.CountInclusive
+	case "country":
+		v.Cfg.Country = defaults.Cfg.Country
+	case "weekend":
+		v.Cfg.Weekend = slices.Clone(defaults.Cfg.Weekend)
+	case "calendar":
+		v.Calendars = slices.Clone(defaults.Calendars)
+	default:
+		return false
+	}
+	return true
+}
+
 // Apply looks up key and applies value to v.
 func Apply(v *Values, key, value string) error {
 	def, ok := ByKey(key)
