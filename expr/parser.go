@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 /*
@@ -151,7 +152,7 @@ func init() {
 		prefix[kw] = (*parser).parsePeriod
 	}
 	prefix["week"] = (*parser).parseWeekPrefix
-	for _, kw := range []string{"second", "minute", "hour", "day", "month", "quarter", "half", "year", "workweek", "businessday"} {
+	for _, kw := range []string{"millisecond", "second", "minute", "hour", "day", "month", "quarter", "half", "year", "workweek", "businessday"} {
 		prefix[kw] = (*parser).parseUnitRel
 	}
 	for _, kw := range []string{"1st", "2nd", "3rd", "4th", "5th"} {
@@ -170,6 +171,8 @@ func init() {
 	prefix["from"] = (*parser).parseFromSpan
 	prefix["between"] = (*parser).parseBetweenSpan
 	prefix["howmany"] = (*parser).parseCount
+	prefix["alias"] = (*parser).parseAliasNode
+	prefix["if"] = (*parser).parseIf
 }
 
 type parser struct {
@@ -180,7 +183,133 @@ type parser struct {
 
 // Parse lexes, normalizes, and parses an expression into a pipeline of AST stages.
 func Parse(input string, lang Lang) (Expr, error) {
-	toks := Normalize(Lex(input), lang)
+	return ParseWithAliases(input, lang, nil)
+}
+
+// ParseWithAliases lexes, normalizes with optional user-defined aliases, and
+// parses either an alias assignment (`<name> = <rhs>`) or an expression pipeline.
+func ParseWithAliases(input string, lang Lang, aliases map[string]string) (Expr, error) {
+	if rawName, rhs, rhsOffset, ok := splitAliasAssignmentWithOffset(input); ok {
+		foldedName, err := ValidateAliasName(rawName)
+		if err != nil {
+			return Expr{}, err
+		}
+		if rhs == "" {
+			return Expr{}, &Error{
+				Pos:      len(input),
+				Msg:      "unexpected end of input",
+				Expected: []string{"a value"},
+			}
+		}
+		parseAliases := make(map[string]string, len(aliases)+1)
+		for k, v := range aliases {
+			parseAliases[k] = v
+		}
+		parseAliases[foldedName] = rhs
+		e, err := parsePipeline(input, rhs, rhsOffset, lang, parseAliases)
+		if err != nil {
+			return Expr{}, err
+		}
+		e.AliasName = foldedName
+		e.AliasRHS = rhs
+		return e, nil
+	}
+	return parsePipeline(input, input, 0, lang, aliases)
+}
+
+// SplitAliasAssignment reports whether input is a top-level `<name> = <rhs>` assignment.
+func SplitAliasAssignment(input string) (name string, rhs string, isAssign bool) {
+	rawName, trimmedRHS, _, ok := splitAliasAssignmentWithOffset(input)
+	return rawName, trimmedRHS, ok
+}
+
+func splitAliasAssignmentWithOffset(input string) (name string, rhs string, rhsOffset int, isAssign bool) {
+	toks := Lex(input)
+	eqIdx := -1
+	for i, tok := range toks {
+		if tok.Kind == Op && tok.Text == "=" {
+			eqIdx = i
+			break
+		}
+	}
+	if eqIdx <= 0 {
+		return "", "", 0, false
+	}
+	for i := 0; i < eqIdx; i++ {
+		if toks[i].Kind != Word {
+			return "", "", 0, false
+		}
+	}
+	eqPos := toks[eqIdx].Pos
+	name = strings.TrimSpace(input[:eqPos])
+	afterEq := input[eqPos+1:]
+	trimmedLeft := strings.TrimLeftFunc(afterEq, unicode.IsSpace)
+	rhsOffset = eqPos + 1 + len(afterEq) - len(trimmedLeft)
+	rhs = strings.TrimSpace(afterEq)
+	return name, rhs, rhsOffset, true
+}
+
+// ValidateAliasName validates and normalizes an alias name, returning its canonical
+// folded key or an error if it is malformed or collides with a keyword or timezone.
+func ValidateAliasName(name string) (string, error) {
+	toks := Lex(name)
+	var wordToks []Token
+	for _, tok := range toks {
+		if tok.Kind == EOF {
+			break
+		}
+		if tok.Kind != Word || strings.Contains(tok.Text, "/") {
+			return "", &Error{Pos: tok.Pos, Msg: fmt.Sprintf("invalid alias name %q", name)}
+		}
+		wordToks = append(wordToks, tok)
+	}
+	if len(wordToks) == 0 {
+		return "", &Error{Pos: 0, Msg: fmt.Sprintf("invalid alias name %q", name)}
+	}
+	folded := joinWordsFolded(wordToks)
+	if len(wordToks) == 1 && isBoundaryAcronym(folded) {
+		return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a built-in keyword", name)}
+	}
+	if _, ok := vocabEN[folded]; ok {
+		return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a built-in keyword", name)}
+	}
+	if _, ok := vocabES[folded]; ok {
+		return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a built-in keyword", name)}
+	}
+	if len(wordToks) == 3 {
+		if _, ok := resolveSpecialPhrase(folded, wordToks, 0); ok {
+			return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a built-in keyword", name)}
+		}
+	}
+	for _, checkLang := range []Lang{EN, ES} {
+		norm := Normalize(wordToks, checkLang)
+		allKeywords := true
+		for _, nt := range norm {
+			if nt.Key == "" {
+				allKeywords = false
+				break
+			}
+		}
+		if allKeywords {
+			return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a built-in keyword", name)}
+		}
+	}
+	if _, err := LookupZone(folded, true); err == nil {
+		return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a timezone", name)}
+	}
+	if _, ok := ambiguousAbbrevs[foldZone(folded)]; ok {
+		return "", &Error{Pos: 0, Msg: fmt.Sprintf("alias name %q conflicts with a timezone", name)}
+	}
+	return folded, nil
+}
+
+func parsePipeline(origInput, exprText string, posOffset int, lang Lang, aliases map[string]string) (Expr, error) {
+	toks := NormalizeWithAliases(Lex(exprText), lang, aliases)
+	if posOffset != 0 {
+		for i := range toks {
+			toks[i].Pos += posOffset
+		}
+	}
 
 	var ties []int
 	for _, tok := range toks {
@@ -190,14 +319,14 @@ func Parse(input string, lang Lang) (Expr, error) {
 	}
 
 	expr := Expr{
-		Input: input,
+		Input: origInput,
 		Lang:  InputLang(toks),
 		Ties:  ties,
 	}
 
 	if len(toks) == 1 && toks[0].Kind == EOF {
 		return Expr{}, &Error{
-			Pos:      0,
+			Pos:      posOffset,
 			Msg:      "empty expression",
 			Expected: []string{"a value"},
 		}
@@ -205,7 +334,7 @@ func Parse(input string, lang Lang) (Expr, error) {
 
 	p := &parser{
 		toks:  toks,
-		input: input,
+		input: origInput,
 	}
 
 	for {
@@ -226,8 +355,8 @@ func Parse(input string, lang Lang) (Expr, error) {
 			}
 			continue
 		}
-		if tok.Kind == Word && tok.Key == "to" {
-			// Stage-level "to" starts a new stage without consuming "to".
+		if tok.Kind == Word && (tok.Key == "to" || (tok.Key == "in" && p.startsInUnit())) {
+			// Stage-level "to" or "in <unit>" starts a new stage without consuming it.
 			continue
 		}
 		return Expr{}, p.unexpectedErr(tok)
@@ -285,6 +414,9 @@ func (p *parser) parseStageBody() (Node, error) {
 				return p.parseTakeStage()
 			}
 		case "in":
+			if p.startsInUnit() {
+				return p.parseInUnitStage()
+			}
 			if p.startsInZone() {
 				return p.parseInZoneStage()
 			}
@@ -358,6 +490,28 @@ func (p *parser) parseInZoneStage() (Node, error) {
 		return Node{}, err
 	}
 	return Node{Op: "inzone", Pos: inTok.Pos, Args: []Node{z}}, nil
+}
+
+func (p *parser) startsInUnit() bool {
+	tok1 := p.peek(1)
+	if tok1.Kind != Word || !isUnitKey(tok1.Key) {
+		return false
+	}
+	tok2 := p.peek(2)
+	if tok2.Kind == Word && (isRelKey(tok2.Key) || tok2.Key == "to" || tok2.Key == "from" || tok2.Key == "between") {
+		return false
+	}
+	return true
+}
+
+func (p *parser) parseInUnitStage() (Node, error) {
+	inTok := p.next()
+	uTok := p.next()
+	return Node{
+		Op:   "to",
+		Pos:  inTok.Pos,
+		Args: []Node{{Op: "unit", Pos: uTok.Pos, Text: uTok.Key}},
+	}, nil
 }
 
 func (p *parser) startsInZone() bool {
@@ -438,7 +592,7 @@ func (p *parser) parsePostfix(afterMul bool) (Node, error) {
 			n = Node{Op: "interpret", Pos: n.Pos, Args: []Node{n, z}}
 			continue
 		}
-		if p.cur().Kind == Word && p.cur().Key == "in" {
+		if p.cur().Kind == Word && p.cur().Key == "in" && !p.startsInUnit() {
 			p.next()
 			z, err := p.parseZone()
 			if err != nil {
@@ -548,6 +702,134 @@ func (p *parser) parsePrimary(afterMul bool) (Node, error) {
 	default:
 		return Node{}, p.unexpectedErr(tok, "a value")
 	}
+}
+
+func (p *parser) parseAliasNode() (Node, error) {
+	tok := p.next()
+	return Node{Op: "alias", Pos: tok.Pos, Text: tok.Unit}, nil
+}
+
+func (p *parser) parseIf() (Node, error) {
+	ifTok := p.next()
+	cond, err := p.parseCondition()
+	if err != nil {
+		return Node{}, err
+	}
+
+	switch {
+	case p.cur().Kind == Op && (p.cur().Text == "," || p.cur().Text == "|"):
+		p.next()
+		if p.cur().Kind == Word && p.cur().Key == "then" {
+			p.next()
+		}
+	case p.cur().Kind == Word && p.cur().Key == "then":
+		p.next()
+	default:
+		return Node{}, p.unexpectedErr(p.cur(), ",", "then")
+	}
+
+	thenBranch, err := p.parseStage()
+	if err != nil {
+		return Node{}, err
+	}
+
+	if p.cur().Kind == Op && (p.cur().Text == "," || p.cur().Text == "|") {
+		p.next()
+	}
+	if p.cur().Kind != Word || p.cur().Key != "else" {
+		return Node{}, p.unexpectedErr(p.cur(), "else")
+	}
+	p.next()
+
+	elseBranch, err := p.parseStage()
+	if err != nil {
+		return Node{}, err
+	}
+
+	return Node{Op: "if", Pos: ifTok.Pos, Args: []Node{cond, thenBranch, elseBranch}}, nil
+}
+
+func (p *parser) parseCondition() (Node, error) {
+	lhs, err := p.parseExpr(bpAdd)
+	if err != nil {
+		return Node{}, err
+	}
+
+	tok := p.cur()
+	switch {
+	case tok.Kind == Word && (tok.Key == "is" || tok.Key == "isnot"):
+		p.next()
+		op := "=="
+		if tok.Key == "isnot" {
+			op = "!="
+		}
+		if op == "==" && p.cur().Kind == Word && p.cur().Key == "not" {
+			p.next()
+			op = "!="
+		}
+		rhs, err := p.parseCondIsRHS()
+		if err != nil {
+			return Node{}, err
+		}
+		return Node{Op: "cond", Pos: lhs.Pos, Text: op, Args: []Node{lhs, rhs}}, nil
+
+	case tok.Kind == Word && (tok.Key == "before" || tok.Key == "after"):
+		p.next()
+		op := "<"
+		if tok.Key == "after" {
+			op = ">"
+		}
+		rhs, err := p.parseExpr(bpAdd)
+		if err != nil {
+			return Node{}, err
+		}
+		return Node{Op: "cond", Pos: lhs.Pos, Text: op, Args: []Node{lhs, rhs}}, nil
+
+	case tok.Kind == Op && (tok.Text == "==" || tok.Text == "!=" || tok.Text == "<" || tok.Text == "<=" || tok.Text == ">" || tok.Text == ">="):
+		p.next()
+		rhs, err := p.parseExpr(bpAdd)
+		if err != nil {
+			return Node{}, err
+		}
+		return Node{Op: "cond", Pos: lhs.Pos, Text: tok.Text, Args: []Node{lhs, rhs}}, nil
+
+	default:
+		return Node{}, p.unexpectedErr(tok, "is", "==", "!=", "<", "<=", ">", ">=")
+	}
+}
+
+func (p *parser) parseCondIsRHS() (Node, error) {
+	next := p.cur()
+	if next.Kind == Word {
+		switch {
+		case isWeekdayKey(next.Key) && isCondEnd(p.peek(1)):
+			p.next()
+			return Node{Op: "pred", Pos: next.Pos, Text: "weekday:" + next.Key}, nil
+		case next.Key == "businessday" && !isRelKey(p.peek(1).Key):
+			p.next()
+			return Node{Op: "pred", Pos: next.Pos, Text: "businessday"}, nil
+		case next.Key == "weekend":
+			p.next()
+			return Node{Op: "pred", Pos: next.Pos, Text: "weekend"}, nil
+		case next.Key == "weekdaykw":
+			p.next()
+			return Node{Op: "pred", Pos: next.Pos, Text: "weekdaykw"}, nil
+		case next.Key == "holidays" && isCondEnd(p.peek(1)):
+			p.next()
+			return Node{Op: "pred", Pos: next.Pos, Text: "holiday"}, nil
+		}
+	}
+	return p.parseExpr(bpAdd)
+}
+
+func isCondEnd(tok Token) bool {
+	if tok.Kind == EOF {
+		return true
+	}
+	if tok.Kind == Op && (tok.Text == "," || tok.Text == "|") {
+		return true
+	}
+	return tok.Kind == Word && (tok.Key == "then" || tok.Key == "else")
 }
 
 func (p *parser) parseSimpleValue() (Node, error) {
@@ -699,6 +981,9 @@ func (p *parser) parseUnitRel() (Node, error) {
 		}
 		return rel, nil
 	}
+	if p.cur().Kind == Word && (p.cur().Key == "to" || p.cur().Key == "from" || p.cur().Key == "between") {
+		return p.finishCount(uTok.Pos, Node{Op: "unit", Pos: uTok.Pos, Text: uTok.Key})
+	}
 	return Node{}, p.unexpectedErr(p.cur(), "last", "next", "this")
 }
 
@@ -743,7 +1028,7 @@ func (p *parser) startsOrSameAnchor() bool {
 		case "inclusive", "to", "and":
 			return false
 		case "in":
-			return !p.startsInZone()
+			return !p.startsInZone() && !p.startsInUnit()
 		}
 	}
 	if p.startsClock() {
@@ -770,6 +1055,9 @@ func (p *parser) parseWeekPrefix() (Node, error) {
 			Text: relTok.Key,
 			Args: []Node{{Op: "unit", Pos: wTok.Pos, Text: "week"}},
 		}, nil
+	}
+	if p.cur().Kind == Word && (p.cur().Key == "to" || p.cur().Key == "from" || p.cur().Key == "between") {
+		return p.finishCount(wTok.Pos, Node{Op: "unit", Pos: wTok.Pos, Text: "week"})
 	}
 	return Node{}, p.unexpectedErr(p.cur(), "a week number", "last", "next", "this")
 }
@@ -806,6 +1094,9 @@ func (p *parser) parseWeekday() (Node, error) {
 		if p.cur().Key == "closest" {
 			p.next()
 			return p.finishClosest(wd.Pos, wd)
+		}
+		if p.cur().Key == "from" || p.cur().Key == "between" {
+			return p.finishCount(wdTok.Pos, wd)
 		}
 	}
 	return wd, nil
@@ -901,10 +1192,9 @@ func (p *parser) parsePeriod() (Node, error) {
 
 func (p *parser) parseBound() (Node, error) {
 	bTok := p.next()
-	if p.cur().Kind != Word || p.cur().Key != "of" {
-		return Node{}, p.unexpectedErr(p.cur(), "of")
+	if p.cur().Kind == Word && p.cur().Key == "of" {
+		p.next() // consume optional "of"
 	}
-	p.next() // consume "of"
 
 	next := p.cur()
 	if next.Kind == EOF {
@@ -1036,6 +1326,22 @@ func (p *parser) parseCount() (Node, error) {
 	default:
 		return Node{}, p.unexpectedErr(wTok, "a unit", "a weekday")
 	}
+	return p.finishCount(hmTok.Pos, what)
+}
+
+func (p *parser) finishCount(pos int, what Node) (Node, error) {
+	if p.cur().Kind == Word && p.cur().Key == "to" {
+		p.next()
+		toVal, err := p.parseExpr(bpAdd)
+		if err != nil {
+			return Node{}, err
+		}
+		return Node{
+			Op:   "count",
+			Pos:  pos,
+			Args: []Node{what, {Op: "default_from", Pos: pos}, toVal},
+		}, nil
+	}
 
 	var sep string
 	switch {
@@ -1046,7 +1352,7 @@ func (p *parser) parseCount() (Node, error) {
 		p.next()
 		sep = "to"
 	default:
-		return Node{}, p.unexpectedErr(p.cur(), "between", "from")
+		return Node{}, p.unexpectedErr(p.cur(), "between", "from", "to")
 	}
 
 	fromVal, err := p.parseExpr(bpAdd)
@@ -1061,7 +1367,7 @@ func (p *parser) parseCount() (Node, error) {
 	if err != nil {
 		return Node{}, err
 	}
-	return Node{Op: "count", Pos: hmTok.Pos, Args: []Node{what, fromVal, toVal}}, nil
+	return Node{Op: "count", Pos: pos, Args: []Node{what, fromVal, toVal}}, nil
 }
 
 func (p *parser) parseClock() (Node, error) {
@@ -1290,6 +1596,7 @@ func canTakeClock(op string) bool {
 	switch op {
 	case "date", "slash", "today", "yesterday", "tomorrow",
 		"rel", "orsame", "weekday", "month", "period", "week", "of", "closest", "bound",
+		"alias", "if",
 		"+", "-":
 		return true
 	default:

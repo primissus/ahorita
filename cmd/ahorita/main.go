@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -33,7 +34,7 @@ type env struct {
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, env{
 		getenv:          os.Getenv,
-		now:             time.Now,
+		now:             func() time.Time { return time.Now().Truncate(time.Second) },
 		readFile:        os.ReadFile,
 		stdinIsTerminal: isTerminal(os.Stdin),
 		writeFile:       os.WriteFile,
@@ -126,10 +127,38 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 	}
 
 	var outLines []string
+	var yamlDocs int
 	exitCode := 0
 
 	for _, input := range inputs {
 		res := expr.Run(input, ctx, s.opts, s.explain)
+		if res.Error == nil {
+			if rawName, rhs, isAssign := expr.SplitAliasAssignment(input); isAssign {
+				if foldedName, err := expr.ValidateAliasName(rawName); err == nil {
+					if ctx.Cfg.Aliases == nil {
+						ctx.Cfg.Aliases = make(map[string]string)
+					}
+					ctx.Cfg.Aliases[foldedName] = rhs
+					if !s.isValid {
+						if s.fileVals.Cfg.Aliases == nil {
+							s.fileVals.Cfg.Aliases = make(map[string]string)
+						}
+						if s.fileKeys == nil {
+							s.fileKeys = make(map[string]bool)
+						}
+						s.fileVals.Cfg.Aliases[foldedName] = rhs
+						s.fileKeys["alias."+foldedName] = true
+						if s.configPath != "" {
+							body := formatConfigWithKeys(s.fileVals, s.fileKeys)
+							if err := writeConfigFile(s.configPath, body, e); err != nil {
+								fmt.Fprintf(stderr, "ahorita: %v\n", err)
+								return 2
+							}
+						}
+					}
+				}
+			}
+		}
 		if s.isValid {
 			if res.Error == nil {
 				outLines = append(outLines, "true")
@@ -145,6 +174,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 				return 1
 			}
 			outLines = append(outLines, string(data))
+			if res.Error != nil {
+				exitCode = 1
+			}
+			continue
+		}
+		if s.yaml {
+			doc := strings.TrimRight(expr.MarshalYAML(res), "\n")
+			if yamlDocs > 0 {
+				doc = "---\n" + doc
+			}
+			yamlDocs++
+			outLines = append(outLines, doc)
 			if res.Error != nil {
 				exitCode = 1
 			}
@@ -275,7 +316,10 @@ func copyToClipboard(text string, e env) error {
 }
 
 func validatePattern(vals internalsettings.Values, now time.Time) error {
-	if vals.Opts.Pattern == "" {
+	if vals.Opts.Pattern == "" ||
+		strings.EqualFold(vals.Opts.Pattern, "json") ||
+		strings.EqualFold(vals.Opts.Pattern, "yaml") ||
+		strings.EqualFold(vals.Opts.Pattern, "yml") {
 		return nil
 	}
 	loc := vals.Loc
@@ -366,7 +410,7 @@ func runConfig(s settings, rest []string, stdout, stderr io.Writer, e env) int {
 		if strings.Contains(cmdStr, "=") {
 			return setConfig(s, append([]string{cmdStr}, rest...), stderr, e)
 		}
-		if _, ok := internalsettings.Lookup(cmdStr); ok {
+		if _, ok := internalsettings.Lookup(cmdStr); ok || isAliasConfigKey(cmdStr) {
 			if len(rest) == 0 {
 				return getConfig(s, []string{cmdStr}, stdout, stderr, e)
 			}
@@ -377,11 +421,40 @@ func runConfig(s settings, rest []string, stdout, stderr io.Writer, e env) int {
 	}
 }
 
+func isAliasConfigKey(raw string) bool {
+	_, ok := parseAliasConfigKey(raw)
+	return ok
+}
+
+func parseAliasConfigKey(raw string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.HasPrefix(lower, "alias."):
+		name := strings.TrimSpace(raw[len("alias."):])
+		return name, name != ""
+	case strings.HasPrefix(lower, "aliases."):
+		name := strings.TrimSpace(raw[len("aliases."):])
+		return name, name != ""
+	default:
+		return "", false
+	}
+}
+
 func listConfig(s settings, stdout, stderr io.Writer, e env) int {
-	lines := make([]string, 0, len(internalsettings.Table))
+	lines := make([]string, 0, len(internalsettings.Table)+len(s.fileVals.Cfg.Aliases))
 	for i := range internalsettings.Table {
 		def := &internalsettings.Table[i]
 		lines = append(lines, def.Key+"="+def.Get(&s.fileVals))
+	}
+	if len(s.fileVals.Cfg.Aliases) > 0 {
+		names := make([]string, 0, len(s.fileVals.Cfg.Aliases))
+		for k := range s.fileVals.Cfg.Aliases {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			lines = append(lines, "alias."+k+"="+s.fileVals.Cfg.Aliases[k])
+		}
 	}
 	return writeOutput(lines, s, stdout, stderr, e)
 }
@@ -397,6 +470,14 @@ func getConfig(s settings, rest []string, stdout, stderr io.Writer, e env) int {
 		return 2
 	}
 	key := strings.TrimSuffix(rawKey, "=")
+	if aliasName, ok := parseAliasConfigKey(key); ok {
+		folded, err := expr.ValidateAliasName(aliasName)
+		if err != nil {
+			fmt.Fprintf(stderr, "ahorita: %v\n", err)
+			return 2
+		}
+		return writeOutput([]string{s.fileVals.Cfg.Aliases[folded]}, s, stdout, stderr, e)
+	}
 	def, ok := internalsettings.Lookup(key)
 	if !ok {
 		fmt.Fprintf(stderr, "ahorita: unknown config key %q\n", key)
@@ -456,6 +537,29 @@ func setConfig(s settings, rest []string, stderr io.Writer, e env) int {
 	}
 	defaults := defaultValuesForEnv(e.getenv)
 	for _, p := range pairs {
+		if aliasName, ok := parseAliasConfigKey(p.key); ok {
+			folded, err := expr.ValidateAliasName(aliasName)
+			if err != nil {
+				fmt.Fprintf(stderr, "ahorita: %v\n", err)
+				return 2
+			}
+			if strings.TrimSpace(p.val) == "" {
+				delete(s.fileVals.Cfg.Aliases, folded)
+				delete(s.fileKeys, "alias."+folded)
+				continue
+			}
+			res := expr.Run(folded+" = "+p.val, expr.Context{Now: e.now(), Loc: s.fileVals.Loc, Cfg: s.fileVals.Cfg}, expr.Options{}, false)
+			if res.Error != nil {
+				fmt.Fprintf(stderr, "ahorita: invalid alias %q: %s\n", folded, res.Error.Msg)
+				return 2
+			}
+			if s.fileVals.Cfg.Aliases == nil {
+				s.fileVals.Cfg.Aliases = make(map[string]string)
+			}
+			s.fileVals.Cfg.Aliases[folded] = p.val
+			s.fileKeys["alias."+folded] = true
+			continue
+		}
 		def, found := internalsettings.Lookup(p.key)
 		if !found {
 			fmt.Fprintf(stderr, "ahorita: unknown config key %q\n", p.key)
@@ -494,6 +598,16 @@ func unsetConfig(s settings, rest []string, stderr io.Writer, e env) int {
 	defaults := defaultValuesForEnv(e.getenv)
 	for _, rawKey := range rest {
 		key := strings.TrimSuffix(rawKey, "=")
+		if aliasName, ok := parseAliasConfigKey(key); ok {
+			folded, err := expr.ValidateAliasName(aliasName)
+			if err != nil {
+				fmt.Fprintf(stderr, "ahorita: %v\n", err)
+				return 2
+			}
+			delete(s.fileVals.Cfg.Aliases, folded)
+			delete(s.fileKeys, "alias."+folded)
+			continue
+		}
 		def, ok := internalsettings.Lookup(key)
 		if !ok {
 			fmt.Fprintf(stderr, "ahorita: unknown config key %q\n", key)

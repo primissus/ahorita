@@ -22,6 +22,7 @@ export type ResultKind =
 
 export interface Result {
   input: string;
+  alias?: string;
   kind?: ResultKind | "";
   text?: string;
   iso?: string;
@@ -53,6 +54,7 @@ export interface RunOptions {
   country?: string;
   weekend?: string | string[];
   days_off?: string[];
+  aliases?: Record<string, string>;
 }
 
 export interface BrowserTimeInfo {

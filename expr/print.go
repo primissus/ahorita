@@ -164,7 +164,40 @@ func (n Node) String() string {
 		if len(n.Args) < 3 {
 			return "how many"
 		}
+		if n.Args[1].Op == "default_from" {
+			return "how many " + printPluralTarget(n.Args[0]) + " to " + n.Args[2].String()
+		}
 		return "how many " + printPluralTarget(n.Args[0]) + " between " + n.Args[1].String() + " and " + n.Args[2].String()
+	case "default_from":
+		return "now"
+	case "alias":
+		return n.Text
+	case "pred":
+		switch n.Text {
+		case "businessday":
+			return "business day"
+		case "weekdaykw":
+			return "weekday"
+		default:
+			return strings.TrimPrefix(n.Text, "weekday:")
+		}
+	case "cond":
+		if len(n.Args) < 2 {
+			return n.Text
+		}
+		if n.Args[1].Op == "pred" {
+			opStr := "is"
+			if n.Text == "!=" {
+				opStr = "is not"
+			}
+			return n.Args[0].String() + " " + opStr + " " + n.Args[1].String()
+		}
+		return n.Args[0].String() + " " + n.Text + " " + n.Args[1].String()
+	case "if":
+		if len(n.Args) < 3 {
+			return "if"
+		}
+		return "if " + n.Args[0].String() + ", " + n.Args[1].String() + ", else " + n.Args[2].String()
 	case "inclusive":
 		if len(n.Args) == 0 {
 			return "inclusive"
@@ -220,6 +253,8 @@ func printGrouped(n Node, ops ...string) string {
 
 func printDurPart(part Node) string {
 	switch part.Op {
+	case "millisecond":
+		return part.Text + "ms"
 	case "second":
 		return part.Text + "s"
 	case "minute":

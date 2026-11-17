@@ -935,7 +935,7 @@ func TestCasesCLI(t *testing.T) {
 		{id: "5", input: "yesterday", want: "2026-11-13"},
 		{id: "6", input: "2d ago", want: "2026-11-12T14:30:00-06:00"},
 		{id: "7", input: "last week", want: "2026-11-02 → 2026-11-08"},
-		{id: "8", input: "today - 1w", want: "2026-11-07"},
+		{id: "8", input: "today - 1w", want: "2026-11-07T14:30:00-06:00"},
 		{id: "9", input: "closest monday", want: "2026-11-16"},
 		{id: "10", input: "today - 1w, monday", want: "2026-11-02"},
 		{id: "11", input: "past monday", want: "2026-11-09"},
@@ -996,11 +996,42 @@ func TestCasesCLI(t *testing.T) {
 		{id: "46", input: "now to california", want: "2026-11-14T12:30:00-08:00"},
 		{id: "47", input: "now to los_angels", want: "2026-11-14T12:30:00-08:00"},
 		{id: "48", input: "2 * (1h + 30m)", want: "3h"},
+		{id: "49", input: "today + 3 days", want: "2026-11-17T14:30:00-06:00"},
+		{id: "50", input: "days to 2027-01-01", want: "48"},
+		{id: "51", input: "days to 2027", want: "48"},
+		{id: "52", input: "how many days to 2027", want: "48"},
+		{id: "53", input: "days from 2026-11-16 to 2026-11-20", want: "4"},
+		{id: "54", input: "EoD", want: "2026-11-14T23:59:59-06:00"},
+		{id: "55", input: "SoD", want: "2026-11-14"},
+		{id: "56", input: "EoM", want: "2026-11-30T23:59:59-06:00"},
+		{id: "57", input: "SoM", want: "2026-11-01"},
+		{id: "58", input: "EoY", want: "2026-12-31T23:59:59-06:00"},
+		{id: "59", input: "end day", want: "2026-11-14T23:59:59-06:00"},
+		{id: "60", input: "start day", want: "2026-11-14"},
+		{id: "61", input: "star of day", want: "2026-11-14"},
+		{id: "62", input: "end minute", want: "2026-11-14T14:30:59-06:00"},
+		{id: "63", input: "yesterday 2pm - now, in hours", want: "-24.5"},
+		{id: "64", input: "yesterday 2pm - now, in minutes", want: "-1470"},
+		{id: "65", input: "yesterday 2pm - now, in seconds", want: "-88200"},
+		{id: "66", input: "yesterday 2pm - now, in millis", want: "-88200000"},
+		{id: "67", input: "yesterday 2pm - now, in milliseconds", want: "-88200000"},
+		{id: "68", input: "yesterday 2pm - now, in days", want: "-1.02"},
+		{id: "69", input: "yesterday 2pm - now, in weeks", want: "-0.15"},
+		{id: "70", input: "180s in hours", want: "0.05"},
+		{id: "71", input: "1500ms in seconds", want: "1.5"},
+		{id: "72", input: "1y in halfs", want: "2"},
+		{id: "73", input: "1y in quarters", want: "4"},
+		{id: "74", input: "oncall week = from last friday to this friday", want: "2026-11-13 → 2026-11-13"},
+		{id: "75", input: "oncall week = if today is friday, from today to next friday, else from last friday to this friday", want: "2026-11-13 → 2026-11-13"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.id+"_"+tc.input, func(t *testing.T) {
-			var args []string
+			cfgPath := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(cfgPath, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"--config-file", cfgPath}
 			if tc.noHolidays {
 				args = append(args, "--country", "none")
 			}
@@ -1012,8 +1043,10 @@ func TestCasesCLI(t *testing.T) {
 			}
 			args = append(args, tc.input)
 
+			e := testEnv(t, true)
+			e.readFile = os.ReadFile
 			var stdout, stderr bytes.Buffer
-			code := run(withTZ(args...), strings.NewReader(""), &stdout, &stderr, testEnv(t, true))
+			code := run(withTZ(args...), strings.NewReader(""), &stdout, &stderr, e)
 			if code != 0 {
 				t.Fatalf("case %s (%q) exit = %d, want 0 (stderr=%q)", tc.id, tc.input, code, stderr.String())
 			}
@@ -1332,6 +1365,127 @@ func TestConfigCLI(t *testing.T) {
 		}
 		if string(after) != string(before) {
 			t.Errorf("config.toml changed after error cases:\nbefore:\n%s\nafter:\n%s", string(before), string(after))
+		}
+	})
+}
+
+func TestAliasesIfYAMLAndIsValidCLI(t *testing.T) {
+	t.Run("alias definition persists to config.toml and resolves across invocations", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(cfgPath, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runWithCfg := func(stdin string, args ...string) (int, string, string) {
+			e := testEnv(t, stdin == "")
+			e.readFile = os.ReadFile
+			var stdout, stderr bytes.Buffer
+			fullArgs := append([]string{"--config-file", cfgPath, "--tz", "America/Mexico_City"}, args...)
+			code := run(fullArgs, strings.NewReader(stdin), &stdout, &stderr, e)
+			return code, stdout.String(), stderr.String()
+		}
+
+		exprStr := "oncall week = if today is friday, from today to next friday, else from last friday to this friday"
+		code, out, errStr := runWithCfg("", exprStr)
+		if code != 0 || errStr != "" || out != "2026-11-13 → 2026-11-13\n" {
+			t.Fatalf("define alias: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "[aliases]") || !strings.Contains(string(data), `"oncall week" =`) {
+			t.Fatalf("config.toml missing [aliases] entry:\n%s", string(data))
+		}
+
+		code, out, errStr = runWithCfg("", "oncall week")
+		if code != 0 || errStr != "" || out != "2026-11-13 → 2026-11-13\n" {
+			t.Fatalf("use persisted alias: code=%d out=%q err=%q", code, out, errStr)
+		}
+
+		// --config get/list/unset for alias.<name>
+		code, out, errStr = runWithCfg("", "--config", "get", "alias.oncall week")
+		if code != 0 || errStr != "" || strings.TrimSpace(out) != "if today is friday, from today to next friday, else from last friday to this friday" {
+			t.Fatalf("--config get alias: code=%d out=%q err=%q", code, out, errStr)
+		}
+		code, out, errStr = runWithCfg("", "--config", "list")
+		if code != 0 || errStr != "" || !strings.Contains(out, "alias.oncall week=") {
+			t.Fatalf("--config list alias: code=%d out=%q err=%q", code, out, errStr)
+		}
+		code, _, errStr = runWithCfg("", "--config", "set", "alias.standup=next monday 9am")
+		if code != 0 || errStr != "" {
+			t.Fatalf("--config set alias.standup: code=%d err=%q", code, errStr)
+		}
+		code, out, errStr = runWithCfg("", "standup")
+		if code != 0 || errStr != "" || out != "2026-11-16T09:00:00-06:00\n" {
+			t.Fatalf("eval standup: code=%d out=%q err=%q", code, out, errStr)
+		}
+		code, _, errStr = runWithCfg("", "--config", "unset", "alias.standup")
+		if code != 0 || errStr != "" {
+			t.Fatalf("--config unset alias.standup: code=%d err=%q", code, errStr)
+		}
+	})
+
+	t.Run("stdin defines alias in memory and --is-valid does not write disk", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(cfgPath, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		e := testEnv(t, false)
+		e.readFile = os.ReadFile
+
+		var stdout, stderr bytes.Buffer
+		stdin := "deploy day = next monday\ndeploy day + 1d\noncall week = if today is friday, 2026-13-45, else today\n"
+		code := run([]string{"--config-file", cfgPath, "--tz", "America/Mexico_City", "--is-valid"}, strings.NewReader(stdin), &stdout, &stderr, e)
+		if code != 0 || stderr.Len() != 0 {
+			t.Fatalf("--is-valid stdin: code=%d stderr=%q", code, stderr.String())
+		}
+		if stdout.String() != "true\ntrue\nfalse\n" {
+			t.Fatalf("--is-valid stdin stdout = %q, want %q", stdout.String(), "true\ntrue\nfalse\n")
+		}
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 0 {
+			t.Fatalf("--is-valid wrote to config.toml:\n%s", string(data))
+		}
+	})
+
+	t.Run("--yaml and -f yaml / -f json output", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(cfgPath, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runFmt := func(args ...string) (int, string, string) {
+			e := testEnv(t, true)
+			e.readFile = os.ReadFile
+			var stdout, stderr bytes.Buffer
+			full := append([]string{"--config-file", cfgPath, "--tz", "America/Mexico_City"}, args...)
+			code := run(full, strings.NewReader(""), &stdout, &stderr, e)
+			return code, stdout.String(), stderr.String()
+		}
+
+		for _, flagArgs := range [][]string{{"--yaml", "today"}, {"-f", "yaml", "today"}, {"-f", "yml", "today"}} {
+			code, out, errStr := runFmt(flagArgs...)
+			if code != 0 || errStr != "" {
+				t.Fatalf("%v: code=%d err=%q", flagArgs, code, errStr)
+			}
+			if !strings.Contains(out, "input: \"today\"\n") || !strings.Contains(out, "kind: \"date\"\n") || !strings.Contains(out, "text: \"2026-11-14\"\n") {
+				t.Fatalf("%v unexpected YAML output:\n%s", flagArgs, out)
+			}
+		}
+
+		code, out, errStr := runFmt("-f", "json", "today")
+		if code != 0 || errStr != "" {
+			t.Fatalf("-f json: code=%d err=%q", code, errStr)
+		}
+		var dec map[string]any
+		if err := json.Unmarshal([]byte(out), &dec); err != nil {
+			t.Fatalf("-f json invalid JSON %q: %v", out, err)
+		}
+		if dec["kind"] != "date" || dec["text"] != "2026-11-14" {
+			t.Fatalf("-f json decoded = %v", dec)
 		}
 	})
 }

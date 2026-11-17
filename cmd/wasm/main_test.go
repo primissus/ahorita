@@ -178,6 +178,14 @@ func TestRunBridge(t *testing.T) {
 			defaultTZ: "America/Mexico_City",
 			wantErr:   "invalid now",
 		},
+		{
+			name:      "aliases option resolves expression alias",
+			input:     "oncall week",
+			optsJSON:  `{"aliases":{"oncall week":"if today is friday, from today to next friday, else from last friday to this friday"}}`,
+			defaultTZ: "America/Mexico_City",
+			wantKind:  "span",
+			wantText:  "2026-11-13 → 2026-11-13",
+		},
 	}
 
 	for _, tc := range tests {

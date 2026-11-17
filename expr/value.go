@@ -37,10 +37,11 @@ type Value struct {
 	End     time.Time // KSpan: exclusive end. KDur with ends: the later end.
 	D       Duration  // KDur; also the length a `during` span was built from
 	N       float64   // KNumber
-	Days    bool      // KSpan: made of whole days (or KDur with ends: both ends were dates)
-	HasEnds bool      // KDur: T and End are set (from a - b)
-	Local   bool      // typed without a zone, so @ / in may still reinterpret it
-	Items   []Value   // KList
+	Days     bool      // KSpan: made of whole days (or KDur with ends: both ends were dates)
+	HasEnds  bool      // KDur: T and End are set (from a - b)
+	Local    bool      // typed without a zone, so @ / in may still reinterpret it
+	TodayNow bool      // KDate originated from "today"; today ± dur shifts from ctx.Now
+	Items    []Value   // KList
 	Str     string    // KText, KRecurrence
 	Note    string    // non-fatal warning (e.g. cron weekday/DST shift across zones)
 	Lang    Lang      // language of the input; set by Eval on the final value

@@ -28,14 +28,16 @@ describe("ahorita calculator UI", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("evaluates typed today + 2d to 2026-11-16", async () => {
+  it("evaluates typed today + 2d to 2026-11-16T14:30:00-06:00", async () => {
     const user = userEvent.setup();
     render(<App defaultNow={FIXED_NOW} defaultTz={FIXED_TZ} />);
 
     const input = screen.getByLabelText("Date or time expression");
     await user.type(input, "today + 2d");
 
-    expect(screen.getByTestId("result-text").textContent).toBe("2026-11-16");
+    expect(screen.getByTestId("result-text").textContent).toBe(
+      "2026-11-16T14:30:00-06:00"
+    );
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -52,7 +54,9 @@ describe("ahorita calculator UI", () => {
       "Date or time expression"
     ) as HTMLInputElement;
     expect(input.value).toBe("today + 2d");
-    expect(screen.getByTestId("result-text").textContent).toBe("2026-11-16");
+    expect(screen.getByTestId("result-text").textContent).toBe(
+      "2026-11-16T14:30:00-06:00"
+    );
   });
 
   it("shows no error banner for incomplete now + and disables operator buttons", async () => {
@@ -104,7 +108,9 @@ describe("ahorita calculator UI", () => {
 
     const input = screen.getByLabelText("Date or time expression");
     await user.type(input, "today + 2d");
-    expect(screen.getByTestId("result-text").textContent).toBe("2026-11-16");
+    expect(screen.getByTestId("result-text").textContent).toBe(
+      "2026-11-16T14:30:00-06:00"
+    );
 
     await user.click(screen.getByRole("button", { name: "relative" }));
     expect(screen.getByTestId("result-text").textContent).toBe("in 2 days");

@@ -6,9 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -28,8 +31,8 @@ type settings struct {
 	configPath string
 	configCmd  string
 	// output switches, flags only:
-	noNewline, copy, json, explain, isValid, saveConfig bool
-	output                                              string
+	noNewline, copy, json, yaml, explain, isValid, saveConfig bool
+	output                                                    string
 }
 
 type settingValue struct {
@@ -170,6 +173,7 @@ func defaultValuesForEnv(getenv func(string) string) internalsettings.Values {
 func cloneValues(v internalsettings.Values) internalsettings.Values {
 	out := v
 	out.Cfg.Weekend = slices.Clone(v.Cfg.Weekend)
+	out.Cfg.Aliases = maps.Clone(v.Cfg.Aliases)
 	out.Calendars = slices.Clone(v.Calendars)
 	return out
 }
@@ -258,6 +262,7 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 	fs.BoolVar(&s.noNewline, "n", false, "do not print a trailing newline")
 	fs.BoolVar(&s.copy, "c", false, "copy output to clipboard")
 	fs.BoolVar(&s.json, "json", false, "print structured JSON")
+	fs.BoolVar(&s.yaml, "yaml", false, "print structured YAML")
 	fs.BoolVar(&s.explain, "explain", false, "print evaluation steps")
 	fs.BoolVar(&s.isValid, "is-valid", false, "print true or false whether the expression is valid")
 	fs.BoolVar(&s.saveConfig, "save-config", false, "save current settings as defaults to config file")
@@ -279,6 +284,13 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 	s.cfg = vals.Cfg
 	s.loc = vals.Loc
 	s.opts = vals.Opts
+	if strings.EqualFold(s.opts.Pattern, "json") {
+		s.json = true
+		s.opts.Pattern = ""
+	} else if strings.EqualFold(s.opts.Pattern, "yaml") || strings.EqualFold(s.opts.Pattern, "yml") {
+		s.yaml = true
+		s.opts.Pattern = ""
+	}
 	s.calendars = vals.Calendars
 	s.vals = vals
 	s.fileVals = fileVals
@@ -402,11 +414,20 @@ func hasFlag(args []string, target string) bool {
 func parseConfig(path string, data []byte, vals *internalsettings.Values) (map[string]bool, error) {
 	keys := make(map[string]bool)
 	lines := strings.Split(string(data), "\n")
+	inAliases := false
 	for i, rawLine := range lines {
 		lineNum := i + 1
 		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			sec := strings.TrimSpace(line[1 : len(line)-1])
+			if strings.EqualFold(sec, "aliases") {
+				inAliases = true
+				continue
+			}
+			return nil, fmt.Errorf("%s:%d: unknown section %q", path, lineNum, line)
 		}
 		eq := strings.IndexByte(line, '=')
 		if eq < 0 {
@@ -420,6 +441,25 @@ func parseConfig(path string, data []byte, vals *internalsettings.Values) (map[s
 		val, err := parseConfigValue(rawVal)
 		if err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", path, lineNum, err)
+		}
+		if inAliases {
+			if strings.HasPrefix(key, `"`) {
+				unq, err := strconv.Unquote(key)
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid alias key %s: %w", path, lineNum, key, err)
+				}
+				key = unq
+			}
+			foldedName, err := expr.ValidateAliasName(key)
+			if err != nil {
+				return nil, fmt.Errorf("%s:%d: %w", path, lineNum, err)
+			}
+			if vals.Cfg.Aliases == nil {
+				vals.Cfg.Aliases = make(map[string]string)
+			}
+			vals.Cfg.Aliases[foldedName] = val
+			keys["alias."+foldedName] = true
+			continue
 		}
 		def, ok := internalsettings.ByKey(key)
 		if !ok {
@@ -435,12 +475,31 @@ func parseConfig(path string, data []byte, vals *internalsettings.Values) (map[s
 
 func parseConfigValue(raw string) (string, error) {
 	if strings.HasPrefix(raw, `"`) {
-		end := strings.IndexByte(raw[1:], '"')
+		end := -1
+		escaped := false
+		for i := 1; i < len(raw); i++ {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if raw[i] == '\\' {
+				escaped = true
+				continue
+			}
+			if raw[i] == '"' {
+				end = i
+				break
+			}
+		}
 		if end < 0 {
 			return "", fmt.Errorf("unterminated quote")
 		}
-		val := raw[1 : 1+end]
-		rest := strings.TrimSpace(raw[2+end:])
+		quoted := raw[:end+1]
+		val, err := strconv.Unquote(quoted)
+		if err != nil {
+			val = raw[1:end]
+		}
+		rest := strings.TrimSpace(raw[end+1:])
 		if rest != "" && !strings.HasPrefix(rest, "#") {
 			return "", fmt.Errorf("unexpected trailing text %q", rest)
 		}
@@ -502,5 +561,33 @@ func formatConfigWithKeys(vals internalsettings.Values, keepKeys map[string]bool
 		}
 		fmt.Fprintf(&b, "%s = %q\n", def.Key, cur)
 	}
+	if len(vals.Cfg.Aliases) > 0 {
+		names := make([]string, 0, len(vals.Cfg.Aliases))
+		for k := range vals.Cfg.Aliases {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString("[aliases]\n")
+		for _, k := range names {
+			fmt.Fprintf(&b, "%s = %q\n", formatTOMLKey(k), vals.Cfg.Aliases[k])
+		}
+	}
 	return b.String()
+}
+
+func formatTOMLKey(k string) string {
+	if k == "" {
+		return `""`
+	}
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		isBare := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'
+		if !isBare {
+			return strconv.Quote(k)
+		}
+	}
+	return k
 }

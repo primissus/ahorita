@@ -247,7 +247,7 @@ func TestRelative(t *testing.T) {
 			cfgLang: EN,
 			want:    "mañana",
 		},
-		{name: "hoy + 1 dia evaluated es", input: "hoy + 1 día", cfgLang: EN, want: "mañana"},
+		{name: "hoy + 1 dia evaluated es", input: "hoy + 1 día", cfgLang: EN, want: "en 1 día"},
 		{name: "2h duration error", input: "2h", cfgLang: EN, wantErr: []string{"relative", "duration"}},
 
 		// Additional coverage for units, boundaries, singulars/plurals, kinds

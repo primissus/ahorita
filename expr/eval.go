@@ -33,11 +33,12 @@ func Explain(input string, ctx Context) ([]Step, error) {
 }
 
 type evaluator struct {
-	ctx         Context
-	loc         *time.Location
-	cfgLang     Lang
-	resLang     Lang
-	priorStages []string
+	ctx           Context
+	loc           *time.Location
+	cfgLang       Lang
+	resLang       Lang
+	priorStages   []string
+	activeAliases map[string]bool
 }
 
 func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
@@ -53,7 +54,7 @@ func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
 		}
 	}
 
-	parsed, err := Parse(input, cfgLang)
+	parsed, err := ParseWithAliases(input, cfgLang, ctx.Cfg.Aliases)
 	if err != nil {
 		return nil, "", err
 	}
@@ -72,11 +73,17 @@ func evalPipeline(input string, ctx Context) ([]Step, Lang, error) {
 		resLang = cfgLang
 	}
 
+	activeAliases := make(map[string]bool)
+	if parsed.AliasName != "" {
+		activeAliases[parsed.AliasName] = true
+	}
+
 	ev := &evaluator{
-		ctx:     ctx,
-		loc:     loc,
-		cfgLang: cfgLang,
-		resLang: resLang,
+		ctx:           ctx,
+		loc:           loc,
+		cfgLang:       cfgLang,
+		resLang:       resLang,
+		activeAliases: activeAliases,
 	}
 
 	cur := Value{
@@ -282,7 +289,7 @@ func isValueOp(op string) bool {
 	case "date", "datetime", "clock", "slash", "unix",
 		"now", "today", "yesterday", "tomorrow",
 		"dur", "num", "ago", "in", "span", "count", "during",
-		"every", "cron":
+		"every", "cron", "alias", "if":
 		return true
 	default:
 		return false
@@ -405,7 +412,13 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		return Value{Kind: KDate, T: t, Local: true}, nil
+		return Value{Kind: KDate, T: t, Local: true, TodayNow: true}, nil
+
+	case "alias":
+		return ev.evalAlias(n, in)
+
+	case "if":
+		return ev.evalIf(n, in)
 
 	case "yesterday", "tomorrow":
 		delta := -1
@@ -551,6 +564,255 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 	default:
 		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("unsupported expression %q", n.Op)}
 	}
+}
+
+func lookupAliasExpr(aliases map[string]string, foldedKey string) (string, bool) {
+	if raw, ok := aliases[foldedKey]; ok {
+		return raw, true
+	}
+	for k, v := range aliases {
+		if fold(strings.Join(strings.Fields(k), " ")) == foldedKey {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func (ev *evaluator) evalAlias(n Node, in Value) (Value, error) {
+	if ev.activeAliases[n.Text] {
+		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("circular alias reference %q", n.Text)}
+	}
+	raw, ok := lookupAliasExpr(ev.ctx.Cfg.Aliases, n.Text)
+	if !ok {
+		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("unknown alias %q", n.Text)}
+	}
+	ev.activeAliases[n.Text] = true
+	defer delete(ev.activeAliases, n.Text)
+
+	parsed, err := ParseWithAliases(raw, ev.cfgLang, ev.ctx.Cfg.Aliases)
+	if err != nil {
+		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("in alias %q: %s", n.Text, err.Error())}
+	}
+	if parsed.AliasName != "" {
+		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("in alias %q: nested alias assignment is not allowed", n.Text)}
+	}
+	if ev.ctx.Cfg.Strict && len(parsed.Ties) > 0 {
+		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("in alias %q: ambiguous word", n.Text)}
+	}
+	stages, err := orderStages(parsed.Stages, ev.ctx.Cfg.Strict)
+	if err != nil {
+		return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("in alias %q: %s", n.Text, err.Error())}
+	}
+
+	cur := in
+	for _, st := range stages {
+		next, err := ev.node(st, cur)
+		if err != nil {
+			return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("in alias %q: %s", n.Text, err.Error())}
+		}
+		cur = next
+	}
+	return cur, nil
+}
+
+func (ev *evaluator) evalIf(n Node, in Value) (Value, error) {
+	if len(n.Args) < 3 {
+		return Value{}, &Error{Pos: n.Pos, Msg: "invalid if expression"}
+	}
+	condOK, err := ev.evalCond(n.Args[0], in)
+	if err != nil {
+		return Value{}, err
+	}
+	// Evaluate both branches so --is-valid and diagnostics catch errors in untaken branches.
+	thenVal, thenErr := ev.node(n.Args[1], in)
+	elseVal, elseErr := ev.node(n.Args[2], in)
+	if thenErr != nil {
+		return Value{}, thenErr
+	}
+	if elseErr != nil {
+		return Value{}, elseErr
+	}
+	if condOK {
+		return thenVal, nil
+	}
+	return elseVal, nil
+}
+
+func (ev *evaluator) evalCond(n Node, in Value) (bool, error) {
+	if len(n.Args) < 2 {
+		return false, &Error{Pos: n.Pos, Msg: "invalid condition"}
+	}
+	lhs, err := ev.node(n.Args[0], in)
+	if err != nil {
+		return false, err
+	}
+	op := n.Text
+
+	if n.Args[1].Op == "pred" {
+		d, err := inputDate(n.Pos, lhs)
+		if err != nil {
+			return false, err
+		}
+		pred := n.Args[1].Text
+		var match bool
+		switch {
+		case strings.HasPrefix(pred, "weekday:"):
+			wd, err := parseWeekday(n.Args[1].Pos, strings.TrimPrefix(pred, "weekday:"))
+			if err != nil {
+				return false, err
+			}
+			match = d.Weekday() == wd
+		case pred == "businessday":
+			match, err = isBusinessDay(d, ev.ctx)
+			if err != nil {
+				return false, withErrorPos(n.Pos, err)
+			}
+		case pred == "weekend":
+			match = isWeekendDay(d.Weekday(), ev.ctx.Cfg.Weekend)
+		case pred == "weekdaykw":
+			match = !isWeekendDay(d.Weekday(), ev.ctx.Cfg.Weekend)
+		case pred == "holiday":
+			match, err = isHolidayOrDayOff(d, ev.ctx)
+			if err != nil {
+				return false, withErrorPos(n.Pos, err)
+			}
+		default:
+			return false, &Error{Pos: n.Args[1].Pos, Msg: fmt.Sprintf("unknown predicate %q", pred)}
+		}
+		if op == "!=" {
+			return !match, nil
+		}
+		return match, nil
+	}
+
+	rhs, err := ev.node(n.Args[1], in)
+	if err != nil {
+		return false, err
+	}
+
+	if (op == "==" || op == "!=") && (lhs.Kind == KDate || lhs.Kind == KDateTime) && rhs.Kind == KSpan {
+		var eq bool
+		if rhs.Days {
+			d := dateOnly(lhs.T)
+			eq = !d.Before(dateOnly(rhs.T)) && d.Before(dateOnly(rhs.End))
+		} else {
+			eq = !lhs.T.Before(rhs.T) && lhs.T.Before(rhs.End)
+		}
+		if op == "!=" {
+			return !eq, nil
+		}
+		return eq, nil
+	}
+
+	if (op == "==" || op == "!=") && lhs.Kind == KSpan && rhs.Kind == KSpan {
+		eq := lhs.Days == rhs.Days && lhs.T.Equal(rhs.T) && lhs.End.Equal(rhs.End)
+		if op == "!=" {
+			return !eq, nil
+		}
+		return eq, nil
+	}
+
+	if lhs.Kind == KNumber && rhs.Kind == KNumber {
+		return cmpFloat(lhs.N, rhs.N, op), nil
+	}
+
+	if lhs.Kind == KDur && rhs.Kind == KDur {
+		return compareDurations(n.Pos, lhs.D, rhs.D, op)
+	}
+
+	if lhs.Kind == KText && rhs.Kind == KText && (op == "==" || op == "!=") {
+		eq := lhs.Str == rhs.Str
+		if op == "!=" {
+			return !eq, nil
+		}
+		return eq, nil
+	}
+
+	if isPointComparable(lhs.Kind) && isPointComparable(rhs.Kind) {
+		if lhs.Kind == KDate && rhs.Kind == KDate {
+			return cmpTime(dateOnly(lhs.T), dateOnly(rhs.T), op), nil
+		}
+		fallback := ev.todayStart()
+		if lhs.Kind == KDate || lhs.Kind == KDateTime || lhs.Kind == KSpan {
+			fallback = dateOnly(lhs.T)
+		} else if rhs.Kind == KDate || rhs.Kind == KDateTime || rhs.Kind == KSpan {
+			fallback = dateOnly(rhs.T)
+		}
+		t1, err := resolvePoint(ev, n.Pos, lhs, fallback)
+		if err != nil {
+			return false, err
+		}
+		t2, err := resolvePoint(ev, n.Pos, rhs, fallback)
+		if err != nil {
+			return false, err
+		}
+		return cmpTime(t1, t2, op), nil
+	}
+
+	return false, &Error{Pos: n.Pos, Msg: fmt.Sprintf("cannot compare %s and %s", kindName(lhs.Kind), kindName(rhs.Kind))}
+}
+
+func isPointComparable(k Kind) bool {
+	return k == KDate || k == KDateTime || k == KTime || k == KSpan
+}
+
+func cmpFloat(a, b float64, op string) bool {
+	switch op {
+	case "==":
+		return a == b
+	case "!=":
+		return a != b
+	case "<":
+		return a < b
+	case "<=":
+		return a <= b
+	case ">":
+		return a > b
+	case ">=":
+		return a >= b
+	default:
+		return false
+	}
+}
+
+func cmpTime(a, b time.Time, op string) bool {
+	switch op {
+	case "==":
+		return a.Equal(b)
+	case "!=":
+		return !a.Equal(b)
+	case "<":
+		return a.Before(b)
+	case "<=":
+		return !a.After(b)
+	case ">":
+		return a.After(b)
+	case ">=":
+		return !a.Before(b)
+	default:
+		return false
+	}
+}
+
+func compareDurations(pos int, a, b Duration, op string) (bool, error) {
+	if a.Months == 0 && b.Months == 0 && a.BizDays == 0 && b.BizDays == 0 {
+		na := float64(a.Days)*float64(24*time.Hour) + float64(a.Nanos)
+		nb := float64(b.Days)*float64(24*time.Hour) + float64(b.Nanos)
+		return cmpFloat(na, nb, op), nil
+	}
+	if a.Days == 0 && b.Days == 0 && a.Nanos == 0 && b.Nanos == 0 && a.BizDays == 0 && b.BizDays == 0 {
+		return cmpFloat(float64(a.Months), float64(b.Months), op), nil
+	}
+	if a.Months == 0 && b.Months == 0 && a.Days == 0 && b.Days == 0 && a.Nanos == 0 && b.Nanos == 0 {
+		return cmpFloat(float64(a.BizDays), float64(b.BizDays), op), nil
+	}
+	if op == "==" {
+		return a == b, nil
+	}
+	if op == "!=" {
+		return a != b, nil
+	}
+	return false, &Error{Pos: pos, Msg: "cannot compare durations with mixed calendar and clock units"}
 }
 
 func (ev *evaluator) evalAt(n Node, in Value, targetLoc *time.Location) (Value, error) {

@@ -240,14 +240,16 @@ func holidays(country string, year int, loc *time.Location) ([]holiday, error) {
 	return out, nil
 }
 
-func isBusinessDay(d time.Time, ctx Context) (bool, error) {
-	wd := d.Weekday()
-	for _, w := range ctx.Cfg.Weekend {
+func isWeekendDay(wd time.Weekday, weekend []time.Weekday) bool {
+	for _, w := range weekend {
 		if w == wd {
-			return false, nil
+			return true
 		}
 	}
+	return false
+}
 
+func isHolidayOrDayOff(d time.Time, ctx Context) (bool, error) {
 	y, m, day := d.Date()
 	if ctx.Cfg.Country != "" {
 		hs, err := holidays(ctx.Cfg.Country, y, d.Location())
@@ -257,7 +259,7 @@ func isBusinessDay(d time.Time, ctx Context) (bool, error) {
 		for _, h := range hs {
 			hy, hm, hd := h.Date.Date()
 			if hy == y && hm == m && hd == day {
-				return false, nil
+				return true, nil
 			}
 		}
 	}
@@ -268,7 +270,7 @@ func isBusinessDay(d time.Time, ctx Context) (bool, error) {
 		case KDate:
 			oy, om, od := off.T.Date()
 			if oy == y && om == m && od == day {
-				return false, nil
+				return true, nil
 			}
 		case KSpan:
 			if off.Days {
@@ -277,15 +279,26 @@ func isBusinessDay(d time.Time, ctx Context) (bool, error) {
 				sc := daysFromCivil(sy, sm, sd)
 				ec := daysFromCivil(ey, em, ed)
 				if dc >= sc && dc < ec {
-					return false, nil
+					return true, nil
 				}
 			} else if !d.Before(off.T) && d.Before(off.End) {
-				return false, nil
+				return true, nil
 			}
 		}
 	}
 
-	return true, nil
+	return false, nil
+}
+
+func isBusinessDay(d time.Time, ctx Context) (bool, error) {
+	if isWeekendDay(d.Weekday(), ctx.Cfg.Weekend) {
+		return false, nil
+	}
+	hol, err := isHolidayOrDayOff(d, ctx)
+	if err != nil {
+		return false, err
+	}
+	return !hol, nil
 }
 
 func withErrorPos(pos int, err error) error {

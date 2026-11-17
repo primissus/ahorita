@@ -44,6 +44,33 @@ const CASES_EXPRESSIONS = [
   "now to california",
   "now to los_angels",
   "2 * (1h + 30m)",
+  "today + 3 days",
+  "days to 2027-01-01",
+  "days to 2027",
+  "how many days to 2027",
+  "days from 2026-11-16 to 2026-11-20",
+  "EoD",
+  "SoD",
+  "EoM",
+  "SoM",
+  "EoY",
+  "end day",
+  "start day",
+  "star of day",
+  "end minute",
+  "yesterday 2pm - now, in hours",
+  "yesterday 2pm - now, in minutes",
+  "yesterday 2pm - now, in seconds",
+  "yesterday 2pm - now, in millis",
+  "yesterday 2pm - now, in milliseconds",
+  "yesterday 2pm - now, in days",
+  "yesterday 2pm - now, in weeks",
+  "180s in hours",
+  "1500ms in seconds",
+  "1y in halfs",
+  "1y in quarters",
+  "oncall week = from last friday to this friday",
+  "oncall week = if today is friday, from today to next friday, else from last friday to this friday",
 ];
 
 await import(path.join(publicDir, "wasm_exec.js"));
@@ -67,9 +94,13 @@ try {
 
   // Pass "now" first so WASM uses the exact same wall-clock second that CLI evaluated.
   const stdinPayload = ["now", ...CASES_EXPRESSIONS].join("\n") + "\n";
+  const cliConfigPath = path.join(tmpDir, "config.toml");
+  fs.writeFileSync(cliConfigPath, "");
   const cliStdout = execFileSync(
     cliBin,
     [
+      "--config-file",
+      cliConfigPath,
       "--json",
       "--tz",
       "America/Mexico_City",

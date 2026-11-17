@@ -76,7 +76,7 @@ func TestRun(t *testing.T) {
 			wantISO:  "2026-11-02",
 			wantUnix: ptr(time.Date(2026, time.November, 2, 0, 0, 0, 0, ctx.Loc).Unix()),
 			wantExplain: []ResultStep{
-				{Stage: "today - 1w", Value: "2026-11-07"},
+				{Stage: "today - 1w", Value: "2026-11-07T14:30:00-06:00"},
 				{Stage: "monday", Value: "2026-11-02"},
 			},
 		},

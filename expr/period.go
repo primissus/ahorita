@@ -126,6 +126,10 @@ func unitBounds(pos int, anchor time.Time, unit string, cfg Config) (start, end 
 	case "second":
 		s := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), anchor.Hour(), anchor.Minute(), anchor.Second(), 0, loc)
 		return s, s.Add(time.Second), false, nil
+	case "millisecond":
+		ms := anchor.Nanosecond() / int(time.Millisecond)
+		s := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), anchor.Hour(), anchor.Minute(), anchor.Second(), ms*int(time.Millisecond), loc)
+		return s, s.Add(time.Millisecond), false, nil
 	case "businessday":
 		return time.Time{}, time.Time{}, false, &Error{Pos: pos, Msg: "start/end doesn't apply to business day"}
 	default:
@@ -138,7 +142,7 @@ func shiftedUnitSpan(pos int, in Value, unit string, delta int, cfg Config) (Val
 		return Value{}, &Error{Pos: pos, Msg: "business day must be evaluated with context"}
 	}
 
-	if unit == "hour" || unit == "minute" || unit == "second" {
+	if unit == "hour" || unit == "minute" || unit == "second" || unit == "millisecond" {
 		if in.Kind != KDate && in.Kind != KDateTime && in.Kind != KSpan {
 			return Value{}, &Error{Pos: pos, Msg: fmt.Sprintf("cannot shift %s by %s", kindName(in.Kind), unit)}
 		}
@@ -153,6 +157,10 @@ func shiftedUnitSpan(pos int, in Value, unit string, delta int, cfg Config) (Val
 		case "second":
 			s := time.Date(in.T.Year(), in.T.Month(), in.T.Day(), in.T.Hour(), in.T.Minute(), in.T.Second(), 0, loc).Add(time.Duration(delta) * time.Second)
 			return Value{Kind: KSpan, T: s, End: s.Add(time.Second), Days: false, Local: in.Local}, nil
+		case "millisecond":
+			ms := in.T.Nanosecond() / int(time.Millisecond)
+			s := time.Date(in.T.Year(), in.T.Month(), in.T.Day(), in.T.Hour(), in.T.Minute(), in.T.Second(), ms*int(time.Millisecond), loc).Add(time.Duration(delta) * time.Millisecond)
+			return Value{Kind: KSpan, T: s, End: s.Add(time.Millisecond), Days: false, Local: in.Local}, nil
 		}
 	}
 
@@ -623,6 +631,11 @@ func resolvePoint(ev *evaluator, pos int, v Value, fallbackDate time.Time) (time
 	switch v.Kind {
 	case KDate, KDateTime:
 		return v.T, nil
+	case KSpan:
+		if v.Days {
+			return dateOnly(v.T), nil
+		}
+		return v.T, nil
 	case KTime:
 		return ev.wallAt(pos, fallbackDate.Year(), fallbackDate.Month(), fallbackDate.Day(),
 			v.T.Hour(), v.T.Minute(), v.T.Second(), fallbackDate.Location())
@@ -640,11 +653,15 @@ func (ev *evaluator) todayStart() time.Time {
 }
 
 func resolveSpanBounds(ev *evaluator, pos int, fromVal, toVal Value) (start, end time.Time, bothDates bool, local bool, err error) {
-	if fromVal.Kind == KDate && toVal.Kind == KDate {
-		if toVal.T.Before(fromVal.T) {
+	fromIsDate := fromVal.Kind == KDate || (fromVal.Kind == KSpan && fromVal.Days)
+	toIsDate := toVal.Kind == KDate || (toVal.Kind == KSpan && toVal.Days)
+	if fromIsDate && toIsDate {
+		s := dateOnly(fromVal.T)
+		e := dateOnly(toVal.T)
+		if e.Before(s) {
 			return time.Time{}, time.Time{}, false, false, &Error{Pos: pos, Msg: "end of range is before start"}
 		}
-		return fromVal.T, toVal.T, true, fromVal.Local && toVal.Local, nil
+		return s, e, true, fromVal.Local && toVal.Local, nil
 	}
 	today := ev.todayStart()
 	start, err = resolvePoint(ev, pos, fromVal, today)
@@ -652,7 +669,7 @@ func resolveSpanBounds(ev *evaluator, pos int, fromVal, toVal Value) (start, end
 		return time.Time{}, time.Time{}, false, false, err
 	}
 	fallback := today
-	if fromVal.Kind == KDate || fromVal.Kind == KDateTime {
+	if fromVal.Kind == KDate || fromVal.Kind == KDateTime || fromVal.Kind == KSpan {
 		fallback = dateOnly(start)
 	}
 	end, err = resolvePoint(ev, pos, toVal, fallback)
@@ -854,11 +871,16 @@ func countUnits(pos int, start, end time.Time, unit string, isWeekday bool, incl
 		return float64(end.Sub(start)) / float64(time.Minute), nil
 	case "second":
 		return float64(end.Sub(start)) / float64(time.Second), nil
-	case "month", "quarter", "year":
+	case "millisecond":
+		return float64(end.Sub(start)) / float64(time.Millisecond), nil
+	case "month", "quarter", "half", "year":
 		unitMonths := 1
-		if unit == "quarter" {
+		switch unit {
+		case "quarter":
 			unitMonths = 3
-		} else if unit == "year" {
+		case "half":
+			unitMonths = 6
+		case "year":
 			unitMonths = 12
 		}
 		effEnd := end
@@ -886,13 +908,28 @@ func (ev *evaluator) evalCount(n Node, in Value, explicitInclusive bool) (Value,
 	if len(n.Args) < 3 {
 		return Value{}, &Error{Pos: n.Pos, Msg: "invalid count expression"}
 	}
-	fromVal, err := ev.node(n.Args[1], in)
-	if err != nil {
-		return Value{}, err
-	}
-	toVal, err := ev.node(n.Args[2], in)
-	if err != nil {
-		return Value{}, err
+	var fromVal, toVal Value
+	var err error
+	if n.Args[1].Op == "default_from" {
+		toVal, err = ev.node(n.Args[2], in)
+		if err != nil {
+			return Value{}, err
+		}
+		isSubDay := n.Args[0].Op == "unit" && (n.Args[0].Text == "hour" || n.Args[0].Text == "minute" || n.Args[0].Text == "second" || n.Args[0].Text == "millisecond")
+		if isSubDay || toVal.Kind == KDateTime || toVal.Kind == KTime || (toVal.Kind == KSpan && !toVal.Days) {
+			fromVal = Value{Kind: KDateTime, T: ev.ctx.Now.In(ev.loc), Local: false}
+		} else {
+			fromVal = Value{Kind: KDate, T: ev.todayStart(), Local: true}
+		}
+	} else {
+		fromVal, err = ev.node(n.Args[1], in)
+		if err != nil {
+			return Value{}, err
+		}
+		toVal, err = ev.node(n.Args[2], in)
+		if err != nil {
+			return Value{}, err
+		}
 	}
 	start, end, _, _, err := resolveSpanBounds(ev, n.Pos, fromVal, toVal)
 	if err != nil {
@@ -982,6 +1019,18 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 				}
 			}
 			if in.D.Months != 0 {
+				if in.D.Days == 0 && in.D.Nanos == 0 && in.D.BizDays == 0 {
+					switch target.Text {
+					case "month":
+						return Value{Kind: KNumber, N: float64(in.D.Months)}, nil
+					case "quarter":
+						return Value{Kind: KNumber, N: float64(in.D.Months) / 3.0}, nil
+					case "half":
+						return Value{Kind: KNumber, N: float64(in.D.Months) / 6.0}, nil
+					case "year":
+						return Value{Kind: KNumber, N: float64(in.D.Months) / 12.0}, nil
+					}
+				}
 				return Value{}, &Error{
 					Pos: n.Pos,
 					Msg: "a month has no fixed length; give a start: during 3 months, to days",
@@ -999,7 +1048,9 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 				return Value{Kind: KNumber, N: totalNanos / float64(time.Minute)}, nil
 			case "second":
 				return Value{Kind: KNumber, N: totalNanos / float64(time.Second)}, nil
-			case "month", "quarter", "year":
+			case "millisecond":
+				return Value{Kind: KNumber, N: totalNanos / float64(time.Millisecond)}, nil
+			case "month", "quarter", "half", "year":
 				return Value{}, &Error{
 					Pos: n.Pos,
 					Msg: fmt.Sprintf("a %s has no fixed length; give a start: during ..., to %s", target.Text, target.Text),

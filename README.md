@@ -55,7 +55,7 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 | Flag | Config key | Values | Effect |
 |---|---|---|---|
 | `-t`, `--type` | `type` | `date`, `datetime`, `time`, `range`, `relative` | Output value type |
-| `-f`, `--format` | `format` | pattern or preset (`iso`, `rfc3339`, `unix`, `human`, `short`) | Display format |
+| `-f`, `--format` | `format` | pattern or preset (`iso`, `rfc3339`, `unix`, `human`, `short`, `json`, `yaml`) | Display format |
 | `--tz` | `tz` | IANA zone, place, alias, or fuzzy name (e.g. `America/Mexico_City`, `los_angeles`, `CDMX`, `UTC`) | Default timezone (defaults to system zone) |
 | `-z`, `--show-tz`, `--show-timezone` | `show_timezone` | `true`, `false` (flag alone sets `true`) | Append timezone to formatted output |
 | `--lang` | `lang` | `en`, `es` | Default language (defaults from `LC_ALL` / `LANG`, else `en`) |
@@ -70,6 +70,7 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 | `-n` | — | — | Omit trailing newline |
 | `-c` | — | — | Copy output (without trailing newline) to clipboard |
 | `--json` | — | — | Print JSON (`Result` object, one per line) |
+| `--yaml` | — | — | Print YAML (`Result` document) |
 | `--explain` | — | — | Print evaluation stages to stderr (or inside JSON with `--json`) |
 | `--is-valid` | — | — | Print `true` or `false` whether the expression is valid |
 | `--config` | — | `get`/`set`/`unset`/`list` | Inspect or update persistent config settings (`--config set format=human`) |
@@ -85,6 +86,7 @@ Manage persistent settings directly with `--config` (Git-style, accepting canoni
 ```sh
 ahorita --config set format=human          # persist a setting (or: set format human)
 ahorita --config set lang=es strict=true   # set multiple keys at once
+ahorita --config set alias.standup="next monday 9am"  # define an expression alias
 ahorita --config get format                # read the configured value
 ahorita --config unset format              # remove a setting from config.toml
 ahorita --config list                      # list all settings (also: ahorita --config)
@@ -118,6 +120,11 @@ Sample `~/.config/ahorita/config.toml`:
 # country = "MX"
 # weekend = "saturday,sunday"
 # calendar = "~/.config/ahorita/days-off.txt"
+
+# Expression aliases (also persisted automatically when running `ahorita "name = expr"`)
+# [aliases]
+# standup = "next monday 9am"
+# "oncall week" = "if today is friday, from today to next friday, else from last friday to this friday"
 ```
 
 ## Output types
@@ -132,7 +139,7 @@ Sample `~/.config/ahorita/config.toml`:
 | `range`    | `2d 4h` / start → end       |
 | `relative` | `in 2 days` / `3 weeks ago` |
 
-The default display is ISO. `-f, --format` takes a pattern (`dd-MM-yyyy`, `d/M/yy`, `HH:mm`) or a preset (`iso`, `rfc3339`, `unix`, `human`, `short`).
+The default display is ISO. `-f, --format` takes a pattern (`dd-MM-yyyy`, `d/M/yy`, `HH:mm`) or a preset (`iso`, `rfc3339`, `unix`, `human`, `short`, `json`, `yaml`).
 
 **Presets**
 
@@ -170,6 +177,7 @@ Unit letters: `s`, `m` (minute), `h`, `d`, `w`, `M` (month), `y`. Words always w
 ```
 today
 now - 1d
+today + 3 days
 2026-06-02 + 2d
 2026-06-02 - 1h
 date1 - date2            → a length that remembers both ends
@@ -186,6 +194,8 @@ today - 1w, monday       → snap to that week's Monday
 past monday
 closest monday
 end of day, today
+EoD                      → end of day (also SoD, EoW, SoW, EoM, SoM, EoQ, SoQ, EoY, SoY)
+end day                  → "of" is optional (start day, end minute, start month, end year)
 end of week, this week
 next month
 in 3 months
@@ -200,10 +210,21 @@ on sept, past year
 ```
 2h
 90m                      → 1h 30m
+180s in hours            → 0.05 (direct conversion; also millis, halfs, quarters)
+yesterday 2pm - now, in hours
 during 2 days
 during 6 weeks, starting …
 <a> .. <b>
 how many <unit> between <a> and <b>
+days to 2027-01-01       → shorthand count from today/now
+days to 2027
+days from 2026-11-16 to 2026-11-20
+```
+
+**Conditionals & aliases**
+```
+if today is friday, from today to next friday, else from last friday to this friday
+oncall week = if today is friday, from today to next friday, else from last friday to this friday
 ```
 
 **Recurrence & cron**
@@ -268,6 +289,7 @@ la semana pasada
 próximo mes
 en 3 meses
 fin del día
+si hoy es viernes, hoy, sino lunes
 ```
 
 ## Feature list
@@ -275,7 +297,11 @@ fin del día
 - Add / subtract dates and times
 - Diff two dates into a range
 - Multiply durations (days, hours)
-- Unit conversion (e.g. `90m` → `1h 30m`)
+- Unit conversion (e.g. `90m` → `1h 30m`, `180s in hours` → `0.05`, `1y in halfs` → `2`)
+- Shorthand unit counts (`days to 2027-01-01`, `days from … to …`)
+- Boundary acronyms (`EoD`, `SoD`, `EoM`, `SoM`, `EoY`) and `of`-less shorthands (`end day`, `end minute`)
+- Conditional `if`/`else` expressions and persisted expression aliases (`name = expr`)
+- JSON and YAML output (`--json`, `--yaml`, `-f json`, `-f yaml`)
 - Timezone conversion
 - Relative dates
 - English and Spanish input
@@ -289,7 +315,7 @@ fin del día
 
 The browser calculator lives in [`web/`](web/) (React + TypeScript + Vite) and delegates 100% of expression parsing, evaluation, and formatting to the Go engine compiled to WebAssembly in [`cmd/wasm/`](cmd/wasm/).
 
-- **WASM bridge (`cmd/wasm/`):** exposes `globalThis.ahoritaRun(input, optionsJSON) -> resultJSON`, accepting `now`, `tz` (browser zone via `Intl.DateTimeFormat().resolvedOptions().timeZone` or user choice), `type`, `format`, `explain`, and all CLI config keys (`lang`, `strict`, `week_start`, `week_one`, `month_overflow`, `count_inclusive`, `country`, `weekend`, `days_off`).
+- **WASM bridge (`cmd/wasm/`):** exposes `globalThis.ahoritaRun(input, optionsJSON) -> resultJSON`, accepting `now`, `tz` (browser zone via `Intl.DateTimeFormat().resolvedOptions().timeZone` or user choice), `type`, `format`, `explain`, `aliases`, and all CLI config keys (`lang`, `strict`, `week_start`, `week_one`, `month_overflow`, `count_inclusive`, `country`, `weekend`, `days_off`).
 
 ```sh
 ./web/build-wasm.sh          # compiles web/public/ahorita.wasm and copies wasm_exec.js

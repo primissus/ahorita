@@ -31,10 +31,11 @@ type bridgeOptions struct {
 	WeekOne        *string         `json:"week_one"`
 	MonthOverflow  *string         `json:"month_overflow"`
 	CountInclusive json.RawMessage `json:"count_inclusive"`
-	Country        *string         `json:"country"`
-	Weekend        json.RawMessage `json:"weekend"`
-	Calendar       *string         `json:"calendar"`
-	DaysOff        []string        `json:"days_off"`
+	Country        *string           `json:"country"`
+	Weekend        json.RawMessage   `json:"weekend"`
+	Calendar       *string           `json:"calendar"`
+	DaysOff        []string          `json:"days_off"`
+	Aliases        map[string]string `json:"aliases"`
 }
 
 func runBridge(input, optsJSON string, rt runtimeEnv) string {
@@ -124,6 +125,16 @@ func evalBridge(input, optsJSON string, rt runtimeEnv) (expr.Result, error) {
 	}
 	if raw.Calendar != nil && strings.TrimSpace(*raw.Calendar) != "" {
 		return expr.Result{}, fmt.Errorf("calendar file paths are not supported in browser; pass expressions in days_off")
+	}
+	if len(raw.Aliases) > 0 {
+		vals.Cfg.Aliases = make(map[string]string, len(raw.Aliases))
+		for k, v := range raw.Aliases {
+			folded, err := expr.ValidateAliasName(k)
+			if err != nil {
+				return expr.Result{}, err
+			}
+			vals.Cfg.Aliases[folded] = v
+		}
 	}
 
 	ctx := expr.Context{

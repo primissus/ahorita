@@ -26,7 +26,7 @@ func evalDur(n Node) (Duration, error) {
 				return Duration{}, &Error{Pos: part.Pos, Msg: fmt.Sprintf("invalid business day count %q", part.Text)}
 			}
 			d.BizDays += count
-		case "second", "minute", "hour":
+		case "millisecond", "second", "minute", "hour":
 			hasOther = true
 			if hasBiz {
 				return Duration{}, &Error{Pos: part.Pos, Msg: "business days can't be combined with other units"}
@@ -37,6 +37,8 @@ func evalDur(n Node) (Duration, error) {
 			}
 			var unit time.Duration
 			switch part.Op {
+			case "millisecond":
+				unit = time.Millisecond
 			case "second":
 				unit = time.Second
 			case "minute":
@@ -189,9 +191,16 @@ func evalSub(pos int, lhs, rhs Value, ctx Context) (Value, error) {
 func shiftValueByDur(pos int, lhs Value, d Duration, ctx Context, isSub bool) (Value, error) {
 	switch lhs.Kind {
 	case KDate:
-		t, err := addDurationCtx(pos, lhs.T, d, ctx)
+		base := lhs.T
+		if lhs.TodayNow {
+			base = ctx.Now.In(ctxLoc(ctx))
+		}
+		t, err := addDurationCtx(pos, base, d, ctx)
 		if err != nil {
 			return Value{}, err
+		}
+		if lhs.TodayNow {
+			return Value{Kind: KDateTime, T: t, Local: false}, nil
 		}
 		if d.Nanos == 0 {
 			return Value{Kind: KDate, T: t, Local: lhs.Local}, nil

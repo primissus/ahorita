@@ -10,10 +10,12 @@ type Node struct {
 
 // Expr is a parsed expression: a pipeline of stages in order.
 type Expr struct {
-	Input  string
-	Stages []Node
-	Lang   Lang  // Lang of the first token that has one; "" if none
-	Ties   []int // Pos of every token Normalize flagged with Tie
+	Input     string
+	Stages    []Node
+	Lang      Lang   // Lang of the first token that has one; "" if none
+	Ties      []int  // Pos of every token Normalize flagged with Tie
+	AliasName string // non-empty when Input is an alias definition `<name> = <rhs>`
+	AliasRHS  string
 }
 
 // Error is a parse or evaluation error with source position and expected next tokens.

@@ -10,6 +10,29 @@ const maxPhraseWords = 4
 // Normalize assigns canonical keywords (Key) to words and quantities,
 // merges multi-word phrases, sets Lang and Tie, and drops filler words.
 func Normalize(toks []Token, lang Lang) []Token {
+	return NormalizeWithAliases(toks, lang, nil)
+}
+
+// NormalizeWithAliases performs Normalize while matching longest folded word
+// sequences against aliases and expanding boundary acronyms.
+func NormalizeWithAliases(toks []Token, lang Lang, aliases map[string]string) []Token {
+	var foldedAliases map[string]string
+	maxAliasWords := 0
+	if len(aliases) > 0 {
+		foldedAliases = make(map[string]string, len(aliases))
+		for k := range aliases {
+			fields := strings.Fields(k)
+			if len(fields) == 0 {
+				continue
+			}
+			folded := fold(strings.Join(fields, " "))
+			foldedAliases[folded] = folded
+			if len(fields) > maxAliasWords {
+				maxAliasWords = len(fields)
+			}
+		}
+	}
+
 	out := make([]Token, 0, len(toks))
 
 	for i := 0; i < len(toks); {
@@ -27,6 +50,42 @@ func Normalize(toks []Token, lang Lang) []Token {
 				tok.Lang = ""
 				tok.Tie = false
 				out = append(out, tok)
+				i++
+				continue
+			}
+
+			if len(foldedAliases) > 0 {
+				maxA := 0
+				for maxA < maxAliasWords && i+maxA < len(toks) {
+					next := toks[i+maxA]
+					if next.Kind != Word || strings.Contains(next.Text, "/") {
+						break
+					}
+					maxA++
+				}
+				aliasMatched := false
+				for n := maxA; n >= 1; n-- {
+					phrase := joinWordsFolded(toks[i : i+n])
+					if aliasKey, ok := foldedAliases[phrase]; ok {
+						out = append(out, Token{
+							Kind: Word,
+							Text: joinWordsRaw(toks[i : i+n]),
+							Pos:  tok.Pos,
+							Key:  "alias",
+							Unit: aliasKey,
+						})
+						i += n
+						aliasMatched = true
+						break
+					}
+				}
+				if aliasMatched {
+					continue
+				}
+			}
+
+			if expanded, ok := expandBoundaryAcronym(tok); ok {
+				out = append(out, expanded...)
 				i++
 				continue
 			}
@@ -85,6 +144,44 @@ func Normalize(toks []Token, lang Lang) []Token {
 	}
 
 	return out
+}
+
+var boundaryAcronyms = map[string][2]string{
+	"eod":  {"end", "day"},
+	"sod":  {"start", "day"},
+	"bod":  {"start", "day"},
+	"eow":  {"end", "week"},
+	"sow":  {"start", "week"},
+	"bow":  {"start", "week"},
+	"eoww": {"end", "workweek"},
+	"soww": {"start", "workweek"},
+	"boww": {"start", "workweek"},
+	"eom":  {"end", "month"},
+	"som":  {"start", "month"},
+	"bom":  {"start", "month"},
+	"eoq":  {"end", "quarter"},
+	"soq":  {"start", "quarter"},
+	"boq":  {"start", "quarter"},
+	"eoy":  {"end", "year"},
+	"soy":  {"start", "year"},
+	"boy":  {"start", "year"},
+}
+
+func isBoundaryAcronym(folded string) bool {
+	_, ok := boundaryAcronyms[folded]
+	return ok
+}
+
+func expandBoundaryAcronym(tok Token) ([]Token, bool) {
+	spec, ok := boundaryAcronyms[fold(tok.Text)]
+	if !ok {
+		return nil, false
+	}
+	return []Token{
+		{Kind: Word, Text: tok.Text, Pos: tok.Pos, Key: spec[0], Lang: EN},
+		{Kind: Word, Text: tok.Text, Pos: tok.Pos, Key: "of", Lang: EN},
+		{Kind: Word, Text: tok.Text, Pos: tok.Pos, Key: spec[1], Lang: EN},
+	}, true
 }
 
 // InputLang returns the Lang of the first token that has one, or "".
@@ -277,6 +374,8 @@ func quantityKey(unit string) (string, Lang) {
 
 	folded := fold(unit)
 	switch folded {
+	case "ms":
+		return "millisecond", ""
 	case "s":
 		return "second", ""
 	case "h":
@@ -340,7 +439,7 @@ func isUnitKey(key string) bool {
 
 func isDurationUnitKey(key string) bool {
 	switch key {
-	case "second", "minute", "hour", "day", "week", "month", "quarter", "half", "year":
+	case "millisecond", "second", "minute", "hour", "day", "week", "month", "quarter", "half", "year":
 		return true
 	default:
 		return false

@@ -18,8 +18,9 @@ type Config struct {
 	MonthOverflow  bool           // false = clamp to the month's last day
 	CountInclusive bool           // false
 	Weekend        []time.Weekday // [time.Saturday, time.Sunday]
-	Country        string         // "MX"; "" disables public holidays
-	DaysOff        []Value        // additional non-business dates or whole-day spans
+	Country        string            // "MX"; "" disables public holidays
+	DaysOff        []Value           // additional non-business dates or whole-day spans
+	Aliases        map[string]string // user-defined expression aliases
 }
 
 // DefaultConfig returns the default evaluation configuration.

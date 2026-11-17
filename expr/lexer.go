@@ -120,8 +120,8 @@ func Lex(input string) []Token {
 			continue
 		}
 
-		if strings.HasPrefix(input[i:], "..") {
-			toks = append(toks, Token{Kind: Op, Text: "..", Pos: i})
+		if op, ok := matchTwoCharOp(input[i:]); ok {
+			toks = append(toks, Token{Kind: Op, Text: op, Pos: i})
 			i += 2
 			continue
 		}
@@ -140,13 +140,22 @@ func Lex(input string) []Token {
 	return toks
 }
 
+func matchTwoCharOp(rest string) (string, bool) {
+	for _, op := range []string{"..", "==", "!=", "<=", ">="} {
+		if strings.HasPrefix(rest, op) {
+			return op, true
+		}
+	}
+	return "", false
+}
+
 func digitAt(s string, idx int) bool {
 	return idx < len(s) && s[idx] >= '0' && s[idx] <= '9'
 }
 
 func isSingleOp(r rune) bool {
 	switch r {
-	case '+', '-', '*', ',', '|', '@', '(', ')':
+	case '+', '-', '*', ',', '|', '@', '(', ')', '=', '<', '>':
 		return true
 	default:
 		return false

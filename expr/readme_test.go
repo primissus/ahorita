@@ -21,6 +21,7 @@ var readmeCases = []readmeCase{
 	// Arithmetic
 	{line: "today", input: "today", want: "2026-11-14"},
 	{line: "now - 1d", input: "now - 1d", want: "2026-11-13T14:30:00-06:00"},
+	{line: "today + 3 days", input: "today + 3 days", want: "2026-11-17T14:30:00-06:00"},
 	{line: "2026-06-02 + 2d", input: "2026-06-02 + 2d", want: "2026-06-04"},
 	// Subtracting 1h from a bare date promotes it to midnight 00:00:00 first.
 	{line: "2026-06-02 - 1h", input: "2026-06-02 - 1h", want: "2026-06-01T23:00:00-06:00"},
@@ -38,6 +39,8 @@ var readmeCases = []readmeCase{
 	{line: "past monday", input: "past monday", want: "2026-11-09"},
 	{line: "closest monday", input: "closest monday", want: "2026-11-16"},
 	{line: "end of day, today", input: "end of day, today", want: "2026-11-14T23:59:59-06:00"},
+	{line: "EoD                      → end of day (also SoD, EoW, SoW, EoM, SoM, EoQ, SoQ, EoY, SoY)", input: "EoD", want: "2026-11-14T23:59:59-06:00"},
+	{line: `end day                  → "of" is optional (start day, end minute, start month, end year)`, input: "end day", want: "2026-11-14T23:59:59-06:00"},
 	{line: "end of week, this week", input: "end of week, this week", want: "2026-11-15T23:59:59-06:00"},
 	{line: "next month", input: "next month", want: "2026-12-01 → 2026-12-31"},
 	{line: "in 3 months", input: "in 3 months", want: "2027-02-14T14:30:00-06:00"},
@@ -50,11 +53,20 @@ var readmeCases = []readmeCase{
 	// Durations & ranges
 	{line: "2h", input: "2h", want: "2h"},
 	{line: "90m                      → 1h 30m", input: "90m", want: "1h 30m"},
+	{line: "180s in hours            → 0.05 (direct conversion; also millis, halfs, quarters)", input: "180s in hours", want: "0.05"},
+	{line: "yesterday 2pm - now, in hours", input: "yesterday 2pm - now, in hours", want: "-24.5"},
 	{line: "during 2 days", input: "during 2 days", want: "2026-11-14 → 2026-11-15"},
 	{line: "during 6 weeks, starting …", input: "during 6 weeks, starting next monday", want: "2026-11-16 → 2026-12-27"},
 	// Closed inclusive date range 2026-11-16 .. 2026-11-20.
 	{line: "<a> .. <b>", input: "2026-11-16 .. 2026-11-20", want: "2026-11-16 → 2026-11-20"},
 	{line: "how many <unit> between <a> and <b>", input: "how many days between 2026-11-16 and 2026-11-20", want: "4"},
+	{line: "days to 2027-01-01       → shorthand count from today/now", input: "days to 2027-01-01", want: "48"},
+	{line: "days to 2027", input: "days to 2027", want: "48"},
+	{line: "days from 2026-11-16 to 2026-11-20", input: "days from 2026-11-16 to 2026-11-20", want: "4"},
+
+	// Conditionals & aliases
+	{line: "if today is friday, from today to next friday, else from last friday to this friday", input: "if today is friday, from today to next friday, else from last friday to this friday", want: "2026-11-13 → 2026-11-13"},
+	{line: "oncall week = if today is friday, from today to next friday, else from last friday to this friday", input: "oncall week = if today is friday, from today to next friday, else from last friday to this friday", want: "2026-11-13 → 2026-11-13"},
 
 	// Recurrence & cron
 	{
@@ -197,6 +209,8 @@ var readmeCases = []readmeCase{
 	{line: "en 3 meses", input: "en 3 meses", want: "2027-02-14T14:30:00-06:00"},
 	// Bare "fin del día" uses today's date (2026-11-14T23:59:59-06:00).
 	{line: "fin del día", input: "fin del día", want: "2026-11-14T23:59:59-06:00"},
+	// Saturday 2026-11-14 is not Friday, so takes the "sino lunes" branch -> 2026-11-09.
+	{line: "si hoy es viernes, hoy, sino lunes", input: "si hoy es viernes, hoy, sino lunes", want: "2026-11-09"},
 }
 
 func TestReadme(t *testing.T) {
