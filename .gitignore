@@ -2,6 +2,9 @@
 /ahorita
 web/public/ahorita.wasm
 web/public/wasm_exec.js
+web/node_modules/
+web/dist/
+web/.vite/
 /*.md
 !/README.md
 !/CLAUDE.md

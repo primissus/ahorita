@@ -14,9 +14,9 @@ ahorita hace 2 días
 Two front ends, one engine:
 
 - **CLI**: fast, scriptable, pipe-friendly. Meant to be dropped into shell snippets and text expanders. This is v1.
-- **GUI**: a web calculator with buttons and date pickers for the same operations. *(planned, after the CLI)*
+- **GUI**: a web calculator with buttons and date pickers for the same operations (React + TypeScript calling the Go engine compiled to WebAssembly).
 
-> Status: the v1 engine and CLI work (arithmetic, relative dates, ranges, timezones, business days and holidays, recurrence, cron, `.ics` calendars, month grids, display formats, English and Spanish). Still missing: the web GUI ([plan 11](plans/plan-11-gui.md)). The build plan is in [`plans/`](plans/README.md).
+> Status: complete across the Go engine, CLI (`cmd/ahorita`), and Web GUI (`cmd/wasm` + `web/`). Supports arithmetic, relative dates, ranges, timezones, business days and holidays, recurrence, cron, `.ics` calendars, month grids, display formats, English and Spanish. The build plan is in [`plans/`](plans/README.md).
 
 ## Usage
 
@@ -251,13 +251,29 @@ fin del día
 - Cron expression generation
 - Custom display formats
 
+## Web GUI
+
+The browser calculator lives in [`web/`](web/) (React + TypeScript + Vite) and delegates 100% of expression parsing, evaluation, and formatting to the Go engine compiled to WebAssembly in [`cmd/wasm/`](cmd/wasm/).
+
+- **WASM bridge (`cmd/wasm/`):** exposes `globalThis.ahoritaRun(input, optionsJSON) -> resultJSON`, accepting `now`, `tz` (browser zone via `Intl.DateTimeFormat().resolvedOptions().timeZone` or user choice), `type`, `format`, `explain`, and all CLI config keys (`lang`, `strict`, `week_start`, `week_one`, `month_overflow`, `count_inclusive`, `country`, `weekend`, `days_off`).
+
+```sh
+./web/build-wasm.sh          # compiles web/public/ahorita.wasm and copies wasm_exec.js
+cd web && npm install
+npm run dev                  # builds WASM and starts Vite dev server
+npm run build                # compiles WASM, runs tsc -b, builds static site to web/dist/
+npm test                     # runs Vitest engine & UI tests + axe-core accessibility check
+node web/verify-cases.mjs    # verifies CASES.md parity between CLI --json and ahorita.wasm
+```
+
 ## Build
 
-Written in Go.
+Written in Go (engine + CLI + WASM bridge) and React/TypeScript (Web GUI).
 
 ```sh
 go build ./...
 go test ./...
+cd web && npm run build && npm test
 ```
 
 ## License

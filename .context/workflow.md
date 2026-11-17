@@ -20,6 +20,7 @@
 - [ ] `go build ./...` passes
 - [ ] `go test ./...` green
 - [ ] `go vet ./...` clean
+- [ ] `cd web && npm run build && npm test` passes
 - [ ] README examples updated if syntax changed
 - [ ] The plan's tracker and the status table in `plans/README.md` are up to date
 
