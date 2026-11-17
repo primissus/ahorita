@@ -1014,7 +1014,7 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 			}
 		}
 	case "zone":
-		loc, err := lookupZoneNode(target)
+		loc, err := ev.lookupZoneNode(target)
 		if err != nil {
 			return Value{}, err
 		}

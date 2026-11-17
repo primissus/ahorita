@@ -38,6 +38,12 @@ const CASES_EXPRESSIONS = [
   "2026-11-13 + 3 business days",
   "2026-12-24 - 2026-11-14",
   "holidays MX 2026",
+  "(now - 1 business day) to los_angeles",
+  "now to Los Angeles",
+  "now to LA",
+  "now to california",
+  "now to los_angels",
+  "2 * (1h + 30m)",
 ];
 
 await import(path.join(publicDir, "wasm_exec.js"));

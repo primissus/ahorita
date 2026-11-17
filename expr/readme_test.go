@@ -28,6 +28,7 @@ var readmeCases = []readmeCase{
 	{line: "date1 - date2            → a length that remembers both ends", input: "2026-12-24 - 2026-11-14", want: "40d"},
 	// 2 hours * 3 = 6 hours.
 	{line: "2h * 3", input: "2h * 3", want: "6h"},
+	{line: "2 * (1h + 30m)", input: "2 * (1h + 30m)", want: "3h"},
 
 	// Relative / natural language
 	{line: "yesterday                → today - 1d (a date)", input: "yesterday", want: "2026-11-13"},
@@ -155,8 +156,12 @@ var readmeCases = []readmeCase{
 	// 14:30-06:00 equals 20:30Z.
 	{line: "…, to UTC", input: "now, to UTC", want: "2026-11-14T20:30:00Z"},
 	{line: "now to Tokyo             → places (IANA city names, case- and accent-insensitive)", input: "now to Tokyo", want: "2026-11-15T05:30:00+09:00"},
+	{line: "now to Los Angeles       → unquoted multi-word places", input: "now to Los Angeles", want: "2026-11-14T12:30:00-08:00"},
 	// CDMX is America/Mexico_City (UTC-6), keeping the 14:30 local wall time.
 	{line: "now to CDMX              → aliases (CDMX, NYC, DC, SF, LA, Tokio, Londres, …)", input: "now to CDMX", want: "2026-11-14T14:30:00-06:00"},
+	{line: "now to california        → states, countries & major cities (seattle, guadalajara, spain, japan, …)", input: "now to california", want: "2026-11-14T12:30:00-08:00"},
+	{line: "now to los_angels        → fuzzy prefix, substring & typo matching (rejected under --strict)", input: "now to los_angels", want: "2026-11-14T12:30:00-08:00"},
+	{line: "(now - 1 business day) to los_angeles", input: "(now - 1 business day) to los_angeles", want: "2026-11-13T12:30:00-08:00"},
 	// JST is fixed UTC+9: 20:30Z + 9h = next day 05:30+09:00.
 	{line: "now to JST               → fixed-offset abbreviations (EST, PST, CET, JST, …; ambiguous like CST error)", input: "now to JST", want: "2026-11-15T05:30:00+09:00"},
 	// +09:00 matches JST: 20:30Z + 9h = 2026-11-15T05:30:00+09:00.

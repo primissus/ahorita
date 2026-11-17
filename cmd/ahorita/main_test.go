@@ -138,6 +138,27 @@ func TestRun(t *testing.T) {
 			wantStdout: "2026/11/14 14:30\n",
 		},
 		{
+			name:       "-z now",
+			args:       withTZ("-z", "now"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-14T14:30:00-06:00 America/Mexico_City\n",
+		},
+		{
+			name:       "--show-tz -f human now",
+			args:       withTZ("--show-tz", "-f", "human", "now"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "Sat, Nov 14, 2026, 2:30 PM America/Mexico_City\n",
+		},
+		{
+			name:       "--show-timezone now to Asia/Tokyo",
+			args:       withTZ("--show-timezone", "now", "to", "Asia/Tokyo"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-15T05:30:00+09:00 Asia/Tokyo\n",
+		},
+		{
 			name:     "-F help",
 			args:     []string{"-F", "help"},
 			terminal: true,
@@ -379,6 +400,48 @@ func TestRun(t *testing.T) {
 			terminal:   true,
 			wantCode:   0,
 			wantStdout: "2026-11-14T14:30:00-05:00\n",
+		},
+		{
+			name:       "parenthesized business day to los_angeles human",
+			args:       withTZ("-f", "human", "(now - 1 business day) to los_angeles"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "Fri, Nov 13, 2026, 12:30 PM\n",
+		},
+		{
+			name:       "now to Los Angeles",
+			args:       withTZ("now", "to", "Los", "Angeles"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-14T12:30:00-08:00\n",
+		},
+		{
+			name:       "now to LA",
+			args:       withTZ("now", "to", "LA"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-14T12:30:00-08:00\n",
+		},
+		{
+			name:       "now to angeles",
+			args:       withTZ("now", "to", "angeles"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-14T12:30:00-08:00\n",
+		},
+		{
+			name:       "now to los_angels",
+			args:       withTZ("now", "to", "los_angels"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-14T12:30:00-08:00\n",
+		},
+		{
+			name:       "--tz los_angeles now",
+			args:       []string{"--tz", "los_angeles", "now"},
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "2026-11-14T12:30:00-08:00\n",
 		},
 	}
 
@@ -625,9 +688,9 @@ func TestErrorMessages(t *testing.T) {
 		},
 		{
 			name:     "parentheses",
-			args:     withTZ("(today)"),
+			args:     withTZ("(today"),
 			wantExit: 1,
-			wantErr:  "ahorita: parentheses aren't supported\n  (today)\n  ^\n",
+			wantErr:  "ahorita: unexpected end of input, expected \")\"\n  (today\n        ^\n  expected: )\n",
 		},
 	}
 
@@ -865,6 +928,13 @@ func TestCasesCLI(t *testing.T) {
 		{id: "40b", input: "today + 2d", flagType: "relative", want: "in 2 days"},
 		{id: "41", input: "2026-06-02", flagFormat: "dd-MM-yyyy", want: "02-06-2026"},
 		{id: "42", input: "2026-06-02", flagFormat: "d/M/yy", want: "2/6/26"},
+		{id: "43", input: "(now - 1 business day) to los_angeles", want: "2026-11-13T12:30:00-08:00"},
+		{id: "43_human", input: "(now - 1 business day) to los_angeles", flagFormat: "human", want: "Fri, Nov 13, 2026, 12:30 PM"},
+		{id: "44", input: "now to Los Angeles", want: "2026-11-14T12:30:00-08:00"},
+		{id: "45", input: "now to LA", want: "2026-11-14T12:30:00-08:00"},
+		{id: "46", input: "now to california", want: "2026-11-14T12:30:00-08:00"},
+		{id: "47", input: "now to los_angels", want: "2026-11-14T12:30:00-08:00"},
+		{id: "48", input: "2 * (1h + 30m)", want: "3h"},
 	}
 
 	for _, tc := range cases {

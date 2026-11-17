@@ -325,3 +325,138 @@ func TestRelative(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatShowTimezone(t *testing.T) {
+	ctx := testRefContext(t)
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatalf("load Asia/Tokyo: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		input string
+		val   *Value
+		opts  Options
+		want  string
+	}{
+		{
+			name:  "iso datetime",
+			input: "now",
+			opts:  Options{ShowTimezone: true},
+			want:  "2026-11-14T14:30:00-06:00 America/Mexico_City",
+		},
+		{
+			name:  "iso date",
+			input: "today",
+			opts:  Options{ShowTimezone: true},
+			want:  "2026-11-14 America/Mexico_City",
+		},
+		{
+			name:  "iso time",
+			input: "now",
+			opts:  Options{Type: "time", ShowTimezone: true},
+			want:  "14:30 America/Mexico_City",
+		},
+		{
+			name:  "human datetime",
+			input: "now",
+			opts:  Options{Pattern: "human", ShowTimezone: true},
+			want:  "Sat, Nov 14, 2026, 2:30 PM America/Mexico_City",
+		},
+		{
+			name:  "short datetime",
+			input: "now",
+			opts:  Options{Pattern: "short", ShowTimezone: true},
+			want:  "11-14-2026 14:30 America/Mexico_City",
+		},
+		{
+			name:  "rfc3339 datetime",
+			input: "now",
+			opts:  Options{Pattern: "rfc3339", ShowTimezone: true},
+			want:  "2026-11-14T14:30:00-06:00 America/Mexico_City",
+		},
+		{
+			name:  "custom pattern",
+			input: "now",
+			opts:  Options{Pattern: "yyyy/MM/dd HH:mm", ShowTimezone: true},
+			want:  "2026/11/14 14:30 America/Mexico_City",
+		},
+		{
+			name:  "converted timezone",
+			input: "now to Asia/Tokyo",
+			opts:  Options{Pattern: "human", ShowTimezone: true},
+			want:  "Sun, Nov 15, 2026, 5:30 AM Asia/Tokyo",
+		},
+		{
+			name:  "fixed offset zone",
+			input: "now to +05:30",
+			opts:  Options{ShowTimezone: true},
+			want:  "2026-11-15T02:00:00+05:30 +05:30",
+		},
+		{
+			name: "span same zone",
+			val:  &Value{Kind: KSpan, T: time.Date(2026, 11, 14, 9, 0, 0, 0, ctx.Loc), End: time.Date(2026, 11, 14, 17, 0, 0, 0, ctx.Loc)},
+			opts: Options{ShowTimezone: true},
+			want: "2026-11-14T09:00:00-06:00 → 2026-11-14T17:00:00-06:00 America/Mexico_City",
+		},
+		{
+			name: "span different zones",
+			val:  &Value{Kind: KSpan, T: time.Date(2026, 11, 14, 9, 0, 0, 0, ctx.Loc), End: time.Date(2026, 11, 15, 0, 0, 0, 0, tokyo)},
+			opts: Options{ShowTimezone: true},
+			want: "2026-11-14T09:00:00-06:00 America/Mexico_City → 2026-11-15T00:00:00+09:00 Asia/Tokyo",
+		},
+		{
+			name: "list with labels",
+			val:  &Value{Kind: KList, Items: []Value{{Kind: KDate, T: time.Date(2026, 11, 16, 0, 0, 0, 0, ctx.Loc), Str: "Revolution Day"}}},
+			opts: Options{ShowTimezone: true},
+			want: "2026-11-16 America/Mexico_City  Revolution Day",
+		},
+		{
+			name:  "unix unchanged",
+			input: "now",
+			opts:  Options{Pattern: "unix", ShowTimezone: true},
+			want:  "1794688200",
+		},
+		{
+			name:  "relative unchanged",
+			input: "now + 2h",
+			opts:  Options{Type: "relative", ShowTimezone: true},
+			want:  "in 2 hours",
+		},
+		{
+			name:  "duration unchanged",
+			input: "2h 30m",
+			opts:  Options{ShowTimezone: true},
+			want:  "2h 30m",
+		},
+		{
+			name: "number unchanged",
+			val:  &Value{Kind: KNumber, N: 2},
+			opts: Options{ShowTimezone: true},
+			want: "2",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var v Value
+			if tc.val != nil {
+				v = *tc.val
+			} else {
+				var err error
+				v, err = Eval(tc.input, ctx)
+				if err != nil {
+					t.Fatalf("Eval(%q) unexpected error: %v", tc.input, err)
+				}
+			}
+			got, err := Format(v, ctx, tc.opts)
+			if err != nil {
+				t.Fatalf("Format(%q) unexpected error: %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Format(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}

@@ -18,6 +18,21 @@ Two front ends, one engine:
 
 > Status: complete across the Go engine, CLI (`cmd/ahorita`), and Web GUI (`cmd/wasm` + `web/`). Supports arithmetic, relative dates, ranges, timezones, business days and holidays, recurrence, cron, `.ics` calendars, month grids, display formats, English and Spanish. The build plan is in [`plans/`](plans/README.md).
 
+## Install
+
+### Homebrew
+
+```sh
+brew install --cask primissus/tap/ahorita
+```
+
+Or tap first:
+
+```sh
+brew tap primissus/tap
+brew install --cask ahorita
+```
+
 ## Usage
 
 ```sh
@@ -41,7 +56,8 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 |---|---|---|---|
 | `-t`, `--type` | `type` | `date`, `datetime`, `time`, `range`, `relative` | Output value type |
 | `-f`, `--format` | `format` | pattern or preset (`iso`, `rfc3339`, `unix`, `human`, `short`) | Display format |
-| `--tz` | `tz` | IANA zone (e.g. `America/Mexico_City`, `UTC`) | Default timezone (defaults to system zone) |
+| `--tz` | `tz` | IANA zone, place, alias, or fuzzy name (e.g. `America/Mexico_City`, `los_angeles`, `CDMX`, `UTC`) | Default timezone (defaults to system zone) |
+| `-z`, `--show-tz`, `--show-timezone` | `show_timezone` | `true`, `false` (flag alone sets `true`) | Append timezone to formatted output |
 | `--lang` | `lang` | `en`, `es` | Default language (defaults from `LC_ALL` / `LANG`, else `en`) |
 | `--strict` | `strict` | `true`, `false` (flag alone sets `true`) | Error on ambiguous input or out-of-order stages |
 | `--day-week-start` | `week_start` | weekday name in English or Spanish | First day of the week (default `monday`) |
@@ -62,7 +78,7 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 
 Precedence is **flag > environment variable > config file > default**.
 
-- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
+- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_SHOW_TIMEZONE`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
 - `AHORITA_CONFIG` overrides the config file path (errors if missing). Standard `TZ`, `LC_ALL`, and `LANG` (values starting with `es` default to Spanish) are also honored.
 - Default config file path: `$XDG_CONFIG_HOME/ahorita/config.toml`, or `~/.config/ahorita/config.toml`. Missing default files are ignored.
 - **Days-off files (`--calendar`):** plain text with one ahorita expression per line evaluating to a date (`2026-11-02`, `next friday`) or a whole-day span (`2026-12-24 .. 2027-01-02`), or an `.ics` file (all-day events and RRULEs within 1 year before to 5 years after `now`). Blank lines and `#` comments (full-line or inline) are ignored in text files. Passing `--calendar` on the CLI overrides `AHORITA_CALENDAR` and `calendar` in config.
@@ -73,6 +89,7 @@ Sample `~/.config/ahorita/config.toml`:
 # Output formatting
 # type = "date"
 # format = "human"
+# show_timezone = false
 
 # Locale and timezone
 # tz = "America/Mexico_City"
@@ -145,6 +162,7 @@ now - 1d
 2026-06-02 - 1h
 date1 - date2            → a length that remembers both ends
 2h * 3
+2 * (1h + 30m)
 ```
 
 **Relative / natural language**
@@ -207,11 +225,15 @@ By default `every …` and `cron "…"` list the next 5 occurrences; `next N` ta
 …, to <timezone>         → convert
 …, to UTC
 now to Tokyo             → places (IANA city names, case- and accent-insensitive)
+now to Los Angeles       → unquoted multi-word places
 now to CDMX              → aliases (CDMX, NYC, DC, SF, LA, Tokio, Londres, …)
+now to california        → states, countries & major cities (seattle, guadalajara, spain, japan, …)
+now to los_angels        → fuzzy prefix, substring & typo matching (rejected under --strict)
+(now - 1 business day) to los_angeles
 now to JST               → fixed-offset abbreviations (EST, PST, CET, JST, …; ambiguous like CST error)
 now to +09:00            → offsets (+09:00, -06:00, +9, UTC+2, GMT-5)
 ```
-Names containing a keyword (`"Port of Spain"`, `"Ciudad de México"`) need quotes.
+Names containing a keyword (`"Port of Spain"`, `"Ciudad de México"`) still need quotes; places starting with articles (`Los Angeles`, `La Paz`, `El Salvador`, `Las Vegas`, `LA`) work unquoted.
 
 **Business days**
 ```

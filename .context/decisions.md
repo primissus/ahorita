@@ -174,6 +174,15 @@
 - **Rejected:** Relying solely on OS zoneinfo files.
 - **Status:** current
 
+### 2026-11-17 · 4.5 Fuzzy timezone dictionary, unquoted article preservation, and parentheses grouping (Plan 12)
+- **Decision:**
+  1. Export `LookupZone(name string, strict bool)` with an expanded place dictionary (US/MX/CA states and regions, countries, and non-IANA major cities/exonyms) and deterministic tiered fuzzy matching for non-slashed queries of length ≥ 4 (Tier 1 word-prefix → Tier 2 substring → Tier 3 Optimal String Alignment Damerau-Levenshtein with `maxDist = 1`, or `2` only when both query and candidate have length ≥ 9 and share/transpose the first character). Unambiguous matches auto-resolve when `strict == false` and return `did you mean: ...` under `--strict` or when multiple distinct zones match. `--tz` falls back to `LookupZone(value, false)` when `time.LoadLocation` fails (while still rejecting `"Local"`).
+  2. Preserve unquoted place names starting with Spanish articles (`Los Angeles`, `LA`, `La Paz`, `El Salvador`, `Las Vegas`) and following Spanish `a` (`ahora a LA`) in `Normalize` by only dropping `"a la"`/`"a las"` before `Clock`/`Number`/`Quantity` and only dropping single-word `"el"`/`"la"`/`"los"`/`"las"` when followed by a Spanish-vocab/special-phrase/number/quantity token.
+  3. Support `"(" span-expr ")"` grouping in the parser (`parsePrimary`), allow `(today - 1d) 2pm` via `canTakeClock`, and parenthesize lower-precedence sub-expressions in `Expr.String()` for clean AST round-tripping.
+- **Why:** Allows natural unquoted place names, common states/countries/cities, mild typos, and grouped sub-expressions like `(now - 1 business day) to los_angeles` and `2 * (1h + 30m)` while preserving offline determinism, `--strict` guarantees, and all Spanish grammar.
+- **Rejected:** Dropping Spanish articles unconditionally (breaks `Los Angeles`/`LA`); allowing edit distance 2 on short words (causes false positives like `Atlantis` → `Atlanta`).
+- **Status:** current
+
 ## CLI
 
 ### 2026-11-14 · 5.1 Unquoted input

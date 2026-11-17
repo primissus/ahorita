@@ -152,6 +152,11 @@ func lookupPhrase(phrase string, toks []Token, i int, out []Token, lang Lang) (s
 		return key, tokLang, false, true
 	case "de":
 		return resolveDe(toks, i), ES, false, true
+	case "a la", "a las":
+		if i+2 < len(toks) && (toks[i+2].Kind == Clock || toks[i+2].Kind == Number || toks[i+2].Kind == Quantity) {
+			return "", ES, false, true
+		}
+		return "", "", false, false
 	}
 
 	enKey, inEN := vocabEN[phrase]
@@ -168,10 +173,38 @@ func lookupPhrase(phrase string, toks []Token, i int, out []Token, lang Lang) (s
 	case inEN:
 		return enKey, EN, false, true
 	case inES:
+		if esKey == "" && !hasSpanishFollower(toks, i+1) {
+			return "", "", false, false
+		}
 		return esKey, ES, false, true
 	default:
 		return "", "", false, false
 	}
+}
+
+func hasSpanishFollower(toks []Token, start int) bool {
+	if start >= len(toks) {
+		return false
+	}
+	if toks[start].Kind == Number || toks[start].Kind == Quantity {
+		return true
+	}
+	for n := 1; n <= maxPhraseWords && start+n <= len(toks); n++ {
+		next := toks[start+n-1]
+		if next.Kind != Word || strings.Contains(next.Text, "/") {
+			break
+		}
+		phrase := joinWordsFolded(toks[start : start+n])
+		if _, ok := vocabES[phrase]; ok {
+			return true
+		}
+		if n == 3 {
+			if _, ok := resolveSpecialPhrase(phrase, toks, start); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func resolveAgo(toks []Token, i int, out []Token, lang Lang) (string, Lang, bool) {

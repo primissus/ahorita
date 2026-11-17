@@ -790,8 +790,8 @@ func daysInMonth(y int, m time.Month) int {
 	}
 }
 
-func lookupZoneNode(n Node) (*time.Location, error) {
-	loc, err := lookupZone(n.Text)
+func (ev *evaluator) lookupZoneNode(n Node) (*time.Location, error) {
+	loc, err := LookupZone(n.Text, ev.ctx.Cfg.Strict)
 	if err != nil {
 		if e, ok := err.(*Error); ok {
 			e.Pos = n.Pos
@@ -802,7 +802,7 @@ func lookupZoneNode(n Node) (*time.Location, error) {
 }
 
 func (ev *evaluator) evalZoneStage(n Node, in Value) (Value, error) {
-	loc, err := lookupZoneNode(n)
+	loc, err := ev.lookupZoneNode(n)
 	if err != nil {
 		return Value{}, err
 	}
@@ -811,14 +811,14 @@ func (ev *evaluator) evalZoneStage(n Node, in Value) (Value, error) {
 
 func (ev *evaluator) evalInterpret(n Node, in Value) (Value, error) {
 	if len(n.Args) == 1 {
-		loc, err := lookupZoneNode(n.Args[0])
+		loc, err := ev.lookupZoneNode(n.Args[0])
 		if err != nil {
 			return Value{}, err
 		}
 		return interpretInZone(n.Pos, in, loc, ev)
 	}
 	if len(n.Args) >= 2 {
-		loc, err := lookupZoneNode(n.Args[1])
+		loc, err := ev.lookupZoneNode(n.Args[1])
 		if err != nil {
 			return Value{}, err
 		}
@@ -829,7 +829,7 @@ func (ev *evaluator) evalInterpret(n Node, in Value) (Value, error) {
 
 func (ev *evaluator) evalInZone(n Node, in Value) (Value, error) {
 	if len(n.Args) == 1 {
-		loc, err := lookupZoneNode(n.Args[0])
+		loc, err := ev.lookupZoneNode(n.Args[0])
 		if err != nil {
 			return Value{}, err
 		}
@@ -839,7 +839,7 @@ func (ev *evaluator) evalInZone(n Node, in Value) (Value, error) {
 		return convertToZone(n.Pos, in, loc, ev)
 	}
 	if len(n.Args) >= 2 {
-		loc, err := lookupZoneNode(n.Args[1])
+		loc, err := ev.lookupZoneNode(n.Args[1])
 		if err != nil {
 			return Value{}, err
 		}

@@ -21,8 +21,14 @@ func TestApplyAndGet(t *testing.T) {
 		{name: "type bad", key: "type", val: "week", wantErr: "invalid type"},
 		{name: "format", key: "format", val: "human", wantGet: "human"},
 		{name: "tz valid", key: "tz", val: "Asia/Tokyo", wantGet: "Asia/Tokyo"},
+		{name: "tz fuzzy place", key: "tz", val: "los_angeles", wantGet: "America/Los_Angeles"},
+		{name: "tz alias", key: "tz", val: "CDMX", wantGet: "America/Mexico_City"},
 		{name: "tz empty", key: "tz", val: "", wantErr: "invalid tz"},
+		{name: "tz local rejected", key: "tz", val: "Local", wantErr: "invalid tz"},
 		{name: "tz invalid", key: "tz", val: "Mars/Olympus", wantErr: "invalid tz"},
+		{name: "show_timezone true", key: "show_timezone", val: "TRUE", wantGet: "true"},
+		{name: "show_timezone false", key: "show_timezone", val: "false", wantGet: "false"},
+		{name: "show_timezone bad", key: "show_timezone", val: "yes", wantErr: "invalid show_timezone"},
 		{name: "lang es", key: "lang", val: "ES", wantGet: "es"},
 		{name: "lang bad", key: "lang", val: "fr", wantErr: "invalid lang"},
 		{name: "strict true", key: "strict", val: "true", wantGet: "true"},
@@ -72,7 +78,7 @@ func TestFlagTakesValue(t *testing.T) {
 	if !FlagTakesValue("tz") || !FlagTakesValue("t") || !FlagTakesValue("day-week-start") {
 		t.Error("expected value flags to return true")
 	}
-	if FlagTakesValue("strict") || FlagTakesValue("count-inclusive") || FlagTakesValue("unknown") {
+	if FlagTakesValue("strict") || FlagTakesValue("count-inclusive") || FlagTakesValue("z") || FlagTakesValue("show-tz") || FlagTakesValue("show-timezone") || FlagTakesValue("unknown") {
 		t.Error("expected bool/unknown flags to return false")
 	}
 }

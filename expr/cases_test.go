@@ -92,6 +92,13 @@ func TestCases(t *testing.T) {
 		{id: "40b", input: "today + 2d", opts: Options{Type: "relative"}, want: "in 2 days"},
 		{id: "41", input: "2026-06-02", opts: Options{Pattern: "dd-MM-yyyy"}, want: "02-06-2026"},
 		{id: "42", input: "2026-06-02", opts: Options{Pattern: "d/M/yy"}, want: "2/6/26"},
+		{id: "43", input: "(now - 1 business day) to los_angeles", want: "2026-11-13T12:30:00-08:00"},
+		{id: "43_human", input: "(now - 1 business day) to los_angeles", opts: Options{Pattern: "human"}, want: "Fri, Nov 13, 2026, 12:30 PM"},
+		{id: "44", input: "now to Los Angeles", want: "2026-11-14T12:30:00-08:00"},
+		{id: "45", input: "now to LA", want: "2026-11-14T12:30:00-08:00"},
+		{id: "46", input: "now to california", want: "2026-11-14T12:30:00-08:00"},
+		{id: "47", input: "now to los_angels", want: "2026-11-14T12:30:00-08:00"},
+		{id: "48", input: "2 * (1h + 30m)", want: "3h"},
 	}
 
 	for _, tc := range cases {

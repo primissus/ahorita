@@ -88,6 +88,13 @@ func TestRunBridge(t *testing.T) {
 			wantSteps: 2,
 		},
 		{
+			name:     "show_timezone appends timezone",
+			input:    "now",
+			optsJSON: `{"tz":"America/Mexico_City","format":"human","show_timezone":true}`,
+			wantKind: "datetime",
+			wantText: "Sat, Nov 14, 2026, 2:30 PM America/Mexico_City",
+		},
+		{
 			name:      "type relative in Spanish",
 			input:     "hace 2 días",
 			optsJSON:  `{"type":"relative","lang":"es"}`,

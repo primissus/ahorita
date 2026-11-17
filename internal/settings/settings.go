@@ -84,15 +84,39 @@ var Table = []Def{
 			return v.Loc.String()
 		},
 		Apply: func(v *Values, value string) error {
-			if value == "" {
+			if value == "" || strings.EqualFold(strings.TrimSpace(value), "local") {
 				return fmt.Errorf("invalid tz %q: must be an IANA timezone name", value)
 			}
 			loc, err := time.LoadLocation(value)
 			if err != nil {
-				return fmt.Errorf("invalid tz %q: must be an IANA timezone name (%w)", value, err)
+				var zErr error
+				loc, zErr = expr.LookupZone(value, false)
+				if zErr != nil {
+					return fmt.Errorf("invalid tz %q: %w", value, zErr)
+				}
 			}
 			v.Loc = loc
 			return nil
+		},
+	},
+	{
+		Key:    "show_timezone",
+		Flags:  []string{"z", "show-tz", "show-timezone"},
+		Env:    "AHORITA_SHOW_TIMEZONE",
+		IsBool: true,
+		Usage:  "append timezone to formatted output (true, false)",
+		Get:    func(v *Values) string { return strconv.FormatBool(v.Opts.ShowTimezone) },
+		Apply: func(v *Values, value string) error {
+			switch strings.ToLower(value) {
+			case "true":
+				v.Opts.ShowTimezone = true
+				return nil
+			case "false":
+				v.Opts.ShowTimezone = false
+				return nil
+			default:
+				return fmt.Errorf("invalid show_timezone %q: allowed values are true, false", value)
+			}
 		},
 	},
 	{

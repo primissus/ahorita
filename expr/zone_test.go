@@ -275,7 +275,44 @@ func TestLookupZone(t *testing.T) {
 		{name: "invalid offset +09:00:00", input: "+09:00:00", wantErrAll: []string{"+09:00:00"}},
 		{name: "invalid offset +9.5", input: "+9.5", wantErrAll: []string{"+9.5"}},
 		{name: "too many suggestions suppressed", input: "a", wantErrAll: []string{"unknown timezone"}, wantErrNone: []string{"did you mean"}},
-		{name: "single suggestion york", input: "york", wantErrAll: []string{"did you mean: New York"}},
+		{name: "single fuzzy york resolves", input: "york", wantLocName: "America/New_York"},
+
+		// Expanded dictionary: states/regions, countries, non-IANA cities, exonyms
+		{name: "california", input: "california", wantLocName: "America/Los_Angeles"},
+		{name: "texas", input: "texas", wantLocName: "America/Chicago"},
+		{name: "florida", input: "florida", wantLocName: "America/New_York"},
+		{name: "arizona", input: "arizona", wantLocName: "America/Phoenix"},
+		{name: "jalisco", input: "jalisco", wantLocName: "America/Mexico_City"},
+		{name: "nuevo leon", input: "nuevo leon", wantLocName: "America/Monterrey"},
+		{name: "baja california", input: "baja california", wantLocName: "America/Tijuana"},
+		{name: "quintana roo", input: "quintana roo", wantLocName: "America/Cancun"},
+		{name: "ontario", input: "ontario", wantLocName: "America/Toronto"},
+		{name: "british columbia", input: "british columbia", wantLocName: "America/Vancouver"},
+		{name: "pacific time", input: "pacific time", wantLocName: "America/Los_Angeles"},
+		{name: "seattle", input: "seattle", wantLocName: "America/Los_Angeles"},
+		{name: "guadalajara", input: "guadalajara", wantLocName: "America/Mexico_City"},
+		{name: "barcelona", input: "barcelona", wantLocName: "Europe/Madrid"},
+		{name: "spain", input: "spain", wantLocName: "Europe/Madrid"},
+		{name: "España", input: "España", wantLocName: "Europe/Madrid"},
+		{name: "japan", input: "japan", wantLocName: "Asia/Tokyo"},
+		{name: "Japón", input: "Japón", wantLocName: "Asia/Tokyo"},
+		{name: "uk", input: "uk", wantLocName: "Europe/London"},
+		{name: "brazil", input: "brazil", wantLocName: "America/Sao_Paulo"},
+		{name: "new zealand", input: "new zealand", wantLocName: "Pacific/Auckland"},
+
+		// Tiered fuzzy prefix/substring
+		{name: "fuzzy word suffix angeles", input: "angeles", wantLocName: "America/Los_Angeles"},
+		{name: "fuzzy multi-word prefix los_ang", input: "los_ang", wantLocName: "America/Los_Angeles"},
+		{name: "fuzzy multi-word prefix mex_city", input: "mex_city", wantLocName: "America/Mexico_City"},
+		{name: "fuzzy prefix toky", input: "toky", wantLocName: "Asia/Tokyo"},
+
+		// Tier 3 Damerau-Levenshtein typo tolerance
+		{name: "typo los_angels", input: "los_angels", wantLocName: "America/Los_Angeles"},
+		{name: "typo los_angls", input: "los_angls", wantLocName: "America/Los_Angeles"},
+		{name: "typo sao_paolo", input: "sao_paolo", wantLocName: "America/Sao_Paulo"},
+		{name: "typo tokoy", input: "tokoy", wantLocName: "Asia/Tokyo"},
+		{name: "typo amsterdm", input: "amsterdm", wantLocName: "Europe/Amsterdam"},
+		{name: "slashed unknown skipped by fuzzy", input: "Mars/Olympus", wantErrAll: []string{"Mars/Olympus"}, wantErrNone: []string{"did you mean"}},
 	}
 
 	for _, tc := range tests {
@@ -360,6 +397,11 @@ func TestZoneEndToEnd(t *testing.T) {
 		{name: "Spanish ahora a Tokio", input: "ahora a Tokio", lang: ES, want: "2026-11-15T05:30:00+09:00"},
 		{name: "Spanish date en Nueva York", input: "2026-11-14 14:30 en Nueva York", lang: ES, want: "2026-11-14T14:30:00-05:00"},
 		{name: "unknown Tok suggests Tokyo with pos", input: "now to Tok", wantErr: "did you mean", wantPos: 7},
+		{name: "fuzzy angeles", input: "now to angeles", want: "2026-11-14T12:30:00-08:00"},
+		{name: "fuzzy typo los_angels", input: "now to los_angels", want: "2026-11-14T12:30:00-08:00"},
+		{name: "alias california", input: "now to california", want: "2026-11-14T12:30:00-08:00"},
+		{name: "alias guadalajara", input: "now to guadalajara", want: "2026-11-14T14:30:00-06:00"},
+		{name: "alias spain", input: "now to spain", want: "2026-11-14T21:30:00+01:00"},
 	}
 
 	for _, tc := range tests {
@@ -417,5 +459,69 @@ func TestCityIndexDeterministicFirstCandidate(t *testing.T) {
 	}
 	if len(multi) == 0 {
 		t.Fatal("expected at least one duplicate city across continent prefixes")
+	}
+}
+
+func TestZoneAliasesValid(t *testing.T) {
+	if len(zoneAliases) == 0 {
+		t.Fatal("zoneAliases is empty")
+	}
+	for k, target := range zoneAliases {
+		if folded := foldZone(k); folded != k {
+			t.Errorf("zoneAliases key %q is not folded (foldZone=%q)", k, folded)
+		}
+		if _, err := time.LoadLocation(target); err != nil {
+			t.Errorf("zoneAliases[%q] = %q failed time.LoadLocation: %v", k, target, err)
+		}
+	}
+}
+
+func TestLookupZoneStrict(t *testing.T) {
+	strictCases := []struct {
+		name    string
+		input   string
+		wantSub string
+	}{
+		{name: "york suggests New York", input: "york", wantSub: "did you mean: New York"},
+		{name: "angeles suggests Los Angeles", input: "angeles", wantSub: "did you mean: Los Angeles"},
+		{name: "los_angels suggests Los Angeles", input: "los_angels", wantSub: "did you mean: Los Angeles"},
+		{name: "tokoy suggests Tokyo", input: "tokoy", wantSub: "did you mean: Tokyo"},
+		{name: "sao_paolo suggests Sao Paulo", input: "sao_paolo", wantSub: "did you mean: Sao Paulo"},
+	}
+	for _, tc := range strictCases {
+		t.Run(tc.name, func(t *testing.T) {
+			loc, err := LookupZone(tc.input, true)
+			if err == nil {
+				t.Fatalf("LookupZone(%q, true) = %v, want error", tc.input, loc)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("LookupZone(%q, true) err = %q, want substring %q", tc.input, err.Error(), tc.wantSub)
+			}
+		})
+	}
+
+	// Exact alias and exact city still work under strict=true.
+	for _, exact := range []string{"california", "seattle", "Tokio", "CDMX", "Tokyo", "America/Los_Angeles"} {
+		if _, err := LookupZone(exact, true); err != nil {
+			t.Errorf("LookupZone(%q, true) unexpected error: %v", exact, err)
+		}
+	}
+
+	// End-to-end strict rejects fuzzy timezone with position.
+	ctx := refCtx(t)
+	ctx.Cfg.Strict = true
+	if _, err := Eval("now to angeles", ctx); err == nil {
+		t.Fatal("Eval(\"now to angeles\", strict) succeeded, want error")
+	} else {
+		var exprErr *Error
+		if !errors.As(err, &exprErr) {
+			t.Fatalf("error type = %T, want *Error", err)
+		}
+		if exprErr.Pos != 7 {
+			t.Errorf("Pos = %d, want 7 (msg: %q)", exprErr.Pos, exprErr.Msg)
+		}
+		if !strings.Contains(exprErr.Msg, "did you mean: Los Angeles") {
+			t.Errorf("Msg = %q, want substring %q", exprErr.Msg, "did you mean: Los Angeles")
+		}
 	}
 }

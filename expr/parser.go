@@ -31,6 +31,7 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	of-expr      = primary [ "of" of-expr ] ;  (* allowed after week, weekday, month, period *)
 
 	primary      = Date | DateTime | SlashDate
+	             | "(" span-expr ")"
 	             | "@" Number               (* unix *)
 	             | clock                    (* Clock [am|pm], Quantity(am|pm), Number (am|pm) *)
 	             | dur [ "ago" ]
@@ -269,7 +270,7 @@ func (p *parser) parseStage() (Node, error) {
 
 func (p *parser) parseStageBody() (Node, error) {
 	tok := p.cur()
-	if tok.Kind == Illegal || (tok.Kind == Op && (tok.Text == "(" || tok.Text == ")")) {
+	if tok.Kind == Illegal || (tok.Kind == Op && tok.Text == ")") {
 		return Node{}, p.unexpectedErr(tok)
 	}
 	if tok.Kind == Word {
@@ -482,6 +483,25 @@ func (p *parser) parsePrimary(afterMul bool) (Node, error) {
 	case Clock:
 		return p.parseClock()
 	case Op:
+		if tok.Text == "(" {
+			p.next()
+			if p.cur().Kind == Op && p.cur().Text == ")" {
+				return Node{}, &Error{
+					Pos:      p.cur().Pos,
+					Msg:      "empty parentheses",
+					Expected: []string{"a value"},
+				}
+			}
+			inner, err := p.parseExpr(bpLowest)
+			if err != nil {
+				return Node{}, err
+			}
+			if p.cur().Kind != Op || p.cur().Text != ")" {
+				return Node{}, p.unexpectedErr(p.cur(), ")")
+			}
+			p.next()
+			return inner, nil
+		}
 		if tok.Text == "@" && p.peek(1).Kind == Number {
 			atTok := p.next()
 			numTok := p.next()
@@ -1166,9 +1186,6 @@ func (p *parser) unexpectedErr(tok Token, expected ...string) error {
 	if tok.Kind == Illegal {
 		return &Error{Pos: tok.Pos, Msg: fmt.Sprintf("unexpected character %q", tok.Text)}
 	}
-	if tok.Kind == Op && (tok.Text == "(" || tok.Text == ")") {
-		return &Error{Pos: tok.Pos, Msg: "parentheses aren't supported"}
-	}
 	if tok.Kind == Quantity && tok.Key == "" {
 		return &Error{Pos: tok.Pos, Msg: fmt.Sprintf("unknown unit %q", tok.Unit)}
 	}
@@ -1272,7 +1289,8 @@ func canTakeOf(op string) bool {
 func canTakeClock(op string) bool {
 	switch op {
 	case "date", "slash", "today", "yesterday", "tomorrow",
-		"rel", "orsame", "weekday", "month", "period", "week", "of", "closest", "bound":
+		"rel", "orsame", "weekday", "month", "period", "week", "of", "closest", "bound",
+		"+", "-":
 		return true
 	default:
 		return false

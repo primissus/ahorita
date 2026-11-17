@@ -655,3 +655,133 @@ func TestNormalizeRecurrenceVocab(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizePlaceArticles(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		lang      Lang
+		wantKeys  []string
+		wantTexts []string
+	}{
+		// Spanish grammar continues dropping articles
+		{
+			name:      "la semana pasada",
+			input:     "la semana pasada",
+			lang:      ES,
+			wantKeys:  []string{"week", "last"},
+			wantTexts: []string{"semana", "pasada"},
+		},
+		{
+			name:      "el lunes",
+			input:     "el lunes",
+			lang:      ES,
+			wantKeys:  []string{"monday"},
+			wantTexts: []string{"lunes"},
+		},
+		{
+			name:      "el fin de semana",
+			input:     "el fin de semana",
+			lang:      ES,
+			wantKeys:  []string{"end", "of", "week"},
+			wantTexts: []string{"fin", "de", "semana"},
+		},
+		{
+			name:      "a las 14:30",
+			input:     "a las 14:30",
+			lang:      ES,
+			wantKeys:  []string{""},
+			wantTexts: []string{"14:30"},
+		},
+		{
+			name:      "a la 1 de la tarde",
+			input:     "a la 1 de la tarde",
+			lang:      ES,
+			wantKeys:  []string{"", "pm"},
+			wantTexts: []string{"1", "de la tarde"},
+		},
+		{
+			name:      "todos los dias",
+			input:     "todos los días",
+			lang:      ES,
+			wantKeys:  []string{"every", "day"},
+			wantTexts: []string{"todos los", "días"},
+		},
+		{
+			name:      "ahora a la semana pasada",
+			input:     "ahora a la semana pasada",
+			lang:      ES,
+			wantKeys:  []string{"now", "to", "week", "last"},
+			wantTexts: []string{"ahora", "a", "semana", "pasada"},
+		},
+		// Unquoted place names preserve leading articles with Key == ""
+		{
+			name:      "now to Los Angeles",
+			input:     "now to Los Angeles",
+			lang:      EN,
+			wantKeys:  []string{"now", "to", "", ""},
+			wantTexts: []string{"now", "to", "Los", "Angeles"},
+		},
+		{
+			name:      "now to LA",
+			input:     "now to LA",
+			lang:      EN,
+			wantKeys:  []string{"now", "to", ""},
+			wantTexts: []string{"now", "to", "LA"},
+		},
+		{
+			name:      "now to La Paz",
+			input:     "now to La Paz",
+			lang:      EN,
+			wantKeys:  []string{"now", "to", "", ""},
+			wantTexts: []string{"now", "to", "La", "Paz"},
+		},
+		{
+			name:      "now to El Salvador",
+			input:     "now to El Salvador",
+			lang:      EN,
+			wantKeys:  []string{"now", "to", "", ""},
+			wantTexts: []string{"now", "to", "El", "Salvador"},
+		},
+		{
+			name:      "now to Las Vegas",
+			input:     "now to Las Vegas",
+			lang:      EN,
+			wantKeys:  []string{"now", "to", "", ""},
+			wantTexts: []string{"now", "to", "Las", "Vegas"},
+		},
+		{
+			name:      "ahora a LA",
+			input:     "ahora a LA",
+			lang:      ES,
+			wantKeys:  []string{"now", "to", ""},
+			wantTexts: []string{"ahora", "a", "LA"},
+		},
+		{
+			name:      "ahora a Los Angeles",
+			input:     "ahora a Los Angeles",
+			lang:      ES,
+			wantKeys:  []string{"now", "to", "", ""},
+			wantTexts: []string{"ahora", "a", "Los", "Angeles"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Normalize(Lex(tc.input), tc.lang)
+			if len(got) != len(tc.wantKeys)+1 {
+				t.Fatalf("Normalize(Lex(%q), %q) returned %d tokens %+v, want %d + EOF",
+					tc.input, tc.lang, len(got), got, len(tc.wantKeys))
+			}
+			for i := range tc.wantKeys {
+				if got[i].Key != tc.wantKeys[i] || got[i].Text != tc.wantTexts[i] {
+					t.Errorf("tok[%d] = (Text=%q, Key=%q), want (Text=%q, Key=%q)",
+						i, got[i].Text, got[i].Key, tc.wantTexts[i], tc.wantKeys[i])
+				}
+			}
+			if got[len(got)-1].Kind != EOF {
+				t.Errorf("last token = %v, want EOF", got[len(got)-1].Kind)
+			}
+		})
+	}
+}

@@ -144,6 +144,16 @@ func TestParse(t *testing.T) {
 		{input: "now | in -06:00"},
 		{input: "now | @ +09:00"},
 		{input: "2026-11-14 14:30, +09:00", canonical: "2026-11-14 14:30 | +09:00"},
+		// Plan 12 parentheses
+		{input: "(today)", canonical: "today"},
+		{input: "(now - 1 business day) to los_angeles", canonical: "now - 1 business day | to los_angeles"},
+		{input: "(today + 1d) @ Tokyo"},
+		{input: "(now - 1h) in Tokyo"},
+		{input: "(today - 1d) 2pm", canonical: "(today - 1d) 14:00"},
+		{input: "2 * (1h + 30m)"},
+		{input: "(1h + 30m) * 2"},
+		{input: "today - (1d + 1h)"},
+		{input: "monday of (next week)", canonical: "monday of next week"},
 	}
 
 	for _, tc := range bigTable {
@@ -317,6 +327,71 @@ func TestParseASTStructure(t *testing.T) {
 			t.Errorf("next month = %#v, want rel wrapping unit", u.Stages[0])
 		}
 	})
+
+	t.Run("parentheses grouping AST", func(t *testing.T) {
+		p1, err := Parse("(now - 1 business day) to los_angeles", EN)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		wantP1 := []Node{
+			{
+				Op:  "-",
+				Pos: 1,
+				Args: []Node{
+					{Op: "now", Pos: 1},
+					{Op: "dur", Pos: 7, Args: []Node{{Op: "businessday", Pos: 7, Text: "1"}}},
+				},
+			},
+			{
+				Op:   "to",
+				Pos:  23,
+				Args: []Node{{Op: "zone", Pos: 26, Text: "los_angeles"}},
+			},
+		}
+		if !reflect.DeepEqual(p1.Stages, wantP1) {
+			t.Errorf("(now - 1 business day) to los_angeles = %#v\nwant %#v", p1.Stages, wantP1)
+		}
+
+		p2, err := Parse("(today + 1d) @ Tokyo", EN)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p2.Stages[0].Op != "interpret" || p2.Stages[0].Args[0].Op != "+" || p2.Stages[0].Args[1].Op != "zone" {
+			t.Errorf("(today + 1d) @ Tokyo = %#v, want interpret(+, zone)", p2.Stages[0])
+		}
+
+		p3, err := Parse("(today - 1d) 2pm", EN)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p3.Stages[0].Op != "at" || p3.Stages[0].Args[0].Op != "-" || p3.Stages[0].Args[1].Text != "14:00" {
+			t.Errorf("(today - 1d) 2pm = %#v, want at(-, 14:00)", p3.Stages[0])
+		}
+
+		p4, err := Parse("2 * (1h + 30m)", EN)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p4.Stages[0].Op != "*" || p4.Stages[0].Args[0].Op != "num" || p4.Stages[0].Args[1].Op != "+" {
+			t.Errorf("2 * (1h + 30m) = %#v, want *(num, +)", p4.Stages[0])
+		}
+
+		p5, err := Parse("today - (1d + 1h)", EN)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p5.Stages[0].Op != "-" || p5.Stages[0].Args[0].Op != "today" || p5.Stages[0].Args[1].Op != "+" {
+			t.Errorf("today - (1d + 1h) = %#v, want -(today, +)", p5.Stages[0])
+		}
+
+		p6, err := Parse("monday of (next week)", EN)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p6.Stages[0].Op != "of" || p6.Stages[0].Args[0].Op != "weekday" || p6.Stages[0].Args[1].Op != "rel" {
+			t.Errorf("monday of (next week) = %#v, want of(weekday, rel)", p6.Stages[0])
+		}
+	})
 }
 
 func TestParseErrors(t *testing.T) {
@@ -349,10 +424,12 @@ func TestParseErrors(t *testing.T) {
 			wantMsg: "unexpected",
 		},
 		{
-			name:    "parentheses",
-			input:   "(today)",
-			wantPos: 0,
-			wantMsg: "parentheses",
+			name:         "empty parentheses",
+			input:        "()",
+			wantPos:      1,
+			wantMsg:      "empty parentheses",
+			wantExpected: true,
+			wantExpItem:  "a value",
 		},
 		{
 			name:         "end of EOF",
@@ -454,16 +531,32 @@ func TestParseErrors(t *testing.T) {
 			wantExpItem:  "and",
 		},
 		{
+			name:         "unclosed paren",
+			input:        "(today",
+			wantPos:      6,
+			wantMsg:      "end of input",
+			wantExpected: true,
+			wantExpItem:  ")",
+		},
+		{
 			name:    "closing paren",
 			input:   "today)",
 			wantPos: 5,
-			wantMsg: "parentheses",
+			wantMsg: `unexpected ")"`,
 		},
 		{
-			name:    "paren inside expr",
-			input:   "now + (1d)",
-			wantPos: 6,
-			wantMsg: "parentheses",
+			name:    "leading closing paren",
+			input:   ")",
+			wantPos: 0,
+			wantMsg: `unexpected ")"`,
+		},
+		{
+			name:         "unclosed paren inside expr",
+			input:        "now + (1d",
+			wantPos:      9,
+			wantMsg:      "end of input",
+			wantExpected: true,
+			wantExpItem:  ")",
 		},
 		{
 			name:    "unknown word after plus",
@@ -688,6 +781,7 @@ func TestREADMEExpressionsParse(t *testing.T) {
 		{"now - 1d", EN},
 		{"2026-06-02 + 2d", EN},
 		{"2h * 3", EN},
+		{"2 * (1h + 30m)", EN},
 		{"yesterday", EN},
 		{"2d ago", EN},
 		{"last week", EN},
@@ -713,7 +807,11 @@ func TestREADMEExpressionsParse(t *testing.T) {
 		{"2026-11-14 14:30, America/New_York", EN},
 		{"now, to Asia/Tokyo", EN},
 		{"now to Tokyo", EN},
+		{"now to Los Angeles", EN},
 		{"now to CDMX", EN},
+		{"now to california", EN},
+		{"now to los_angels", EN},
+		{"(now - 1 business day) to los_angeles", EN},
 		{"now to JST", EN},
 		{"now to +09:00", EN},
 		{`now to "Port of Spain"`, EN},

@@ -62,7 +62,16 @@ func (n Node) String() string {
 		if len(n.Args) < 2 {
 			return n.Op
 		}
-		return n.Args[0].String() + " " + n.Op + " " + n.Args[1].String()
+		lhs := n.Args[0].String()
+		rhs := n.Args[1].String()
+		switch n.Op {
+		case "*":
+			lhs = printGrouped(n.Args[0], "+", "-")
+			rhs = printGrouped(n.Args[1], "+", "-")
+		case "-":
+			rhs = printGrouped(n.Args[1], "+", "-")
+		}
+		return lhs + " " + n.Op + " " + rhs
 	case "ago":
 		if len(n.Args) == 0 {
 			return "ago"
@@ -178,7 +187,7 @@ func (n Node) String() string {
 		case 1:
 			return "@ " + n.Args[0].String()
 		default:
-			return n.Args[0].String() + " @ " + n.Args[1].String()
+			return printGrouped(n.Args[0], "+", "-", "*") + " @ " + n.Args[1].String()
 		}
 	case "inzone":
 		switch len(n.Args) {
@@ -187,16 +196,26 @@ func (n Node) String() string {
 		case 1:
 			return "in " + n.Args[0].String()
 		default:
-			return n.Args[0].String() + " in " + n.Args[1].String()
+			return printGrouped(n.Args[0], "+", "-", "*") + " in " + n.Args[1].String()
 		}
 	case "at":
 		if len(n.Args) < 2 {
 			return ""
 		}
-		return n.Args[0].String() + " " + n.Args[1].String()
+		return printGrouped(n.Args[0], "+", "-", "*") + " " + n.Args[1].String()
 	default:
 		return n.Text
 	}
+}
+
+func printGrouped(n Node, ops ...string) string {
+	s := n.String()
+	for _, op := range ops {
+		if n.Op == op {
+			return "(" + s + ")"
+		}
+	}
+	return s
 }
 
 func printDurPart(part Node) string {

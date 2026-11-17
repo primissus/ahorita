@@ -113,6 +113,68 @@ func TestPrint(t *testing.T) {
 			}},
 			want: `today .. tomorrow | how many days between 2026-11-16 and 2026-11-20 inclusive | how many mondays between today and 2026-12-31 | how many halves between today and tomorrow | to hours | to business days | to "New York" | to cron | 14:00 @ Tokyo | @ Tokyo | yesterday 14:30 in "Port of Spain" | in UTC | next business day on or after 2026-11-14 | last business day on or before | holidays | holidays MX 2026`,
 		},
+		{
+			name: "parentheses grouping",
+			expr: Expr{Stages: []Node{
+				{Op: "*", Args: []Node{
+					{Op: "num", Text: "2"},
+					{Op: "+", Args: []Node{
+						{Op: "dur", Args: []Node{{Op: "hour", Text: "1"}}},
+						{Op: "dur", Args: []Node{{Op: "minute", Text: "30"}}},
+					}},
+				}},
+				{Op: "*", Args: []Node{
+					{Op: "-", Args: []Node{
+						{Op: "dur", Args: []Node{{Op: "hour", Text: "2"}}},
+						{Op: "dur", Args: []Node{{Op: "minute", Text: "30"}}},
+					}},
+					{Op: "num", Text: "3"},
+				}},
+				{Op: "-", Args: []Node{
+					{Op: "today"},
+					{Op: "+", Args: []Node{
+						{Op: "dur", Args: []Node{{Op: "day", Text: "1"}}},
+						{Op: "dur", Args: []Node{{Op: "hour", Text: "1"}}},
+					}},
+				}},
+				{Op: "-", Args: []Node{
+					{Op: "+", Args: []Node{
+						{Op: "today"},
+						{Op: "dur", Args: []Node{{Op: "day", Text: "1"}}},
+					}},
+					{Op: "dur", Args: []Node{{Op: "hour", Text: "1"}}},
+				}},
+				{Op: "at", Args: []Node{
+					{Op: "-", Args: []Node{
+						{Op: "today"},
+						{Op: "dur", Args: []Node{{Op: "day", Text: "1"}}},
+					}},
+					{Op: "clock", Text: "14:00"},
+				}},
+				{Op: "interpret", Args: []Node{
+					{Op: "+", Args: []Node{
+						{Op: "today"},
+						{Op: "dur", Args: []Node{{Op: "day", Text: "1"}}},
+					}},
+					{Op: "zone", Text: "Tokyo"},
+				}},
+				{Op: "inzone", Args: []Node{
+					{Op: "-", Args: []Node{
+						{Op: "now"},
+						{Op: "dur", Args: []Node{{Op: "hour", Text: "1"}}},
+					}},
+					{Op: "zone", Text: "Tokyo"},
+				}},
+				{Op: "inzone", Args: []Node{
+					{Op: "*", Args: []Node{
+						{Op: "dur", Args: []Node{{Op: "hour", Text: "2"}}},
+						{Op: "num", Text: "3"},
+					}},
+					{Op: "zone", Text: "Tokyo"},
+				}},
+			}},
+			want: `2 * (1h + 30m) | (2h - 30m) * 3 | today - (1d + 1h) | today + 1d - 1h | (today - 1d) 14:00 | (today + 1d) @ Tokyo | (now - 1h) in Tokyo | (2h * 3) in Tokyo`,
+		},
 	}
 
 	for _, tc := range tests {

@@ -170,6 +170,36 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
+			name:     "-z does not eat expression",
+			args:     []string{"-z", "now"},
+			wantArgs: []string{"now"},
+			check: func(t *testing.T, s settings) {
+				if !s.opts.ShowTimezone {
+					t.Error("ShowTimezone = false, want true")
+				}
+			},
+		},
+		{
+			name:     "--show-tz enables ShowTimezone",
+			args:     []string{"--show-tz", "now"},
+			wantArgs: []string{"now"},
+			check: func(t *testing.T, s settings) {
+				if !s.opts.ShowTimezone {
+					t.Error("ShowTimezone = false, want true")
+				}
+			},
+		},
+		{
+			name: "AHORITA_SHOW_TIMEZONE=true overridden by --show-timezone=false",
+			args: []string{"--show-timezone=false"},
+			env:  map[string]string{"AHORITA_SHOW_TIMEZONE": "true"},
+			check: func(t *testing.T, s settings) {
+				if s.opts.ShowTimezone {
+					t.Error("ShowTimezone = true, want false")
+				}
+			},
+		},
+		{
 			name:     "all remaining settings flags and output switches",
 			args:     []string{"-n", "-c", "--json", "--explain", "-o", "/tmp/out.txt", "-f", "dd-MM-yyyy", "--week-one", "full", "--month-overflow", "overflow", "--count-inclusive", "today"},
 			wantArgs: []string{"today"},

@@ -10,14 +10,15 @@ import (
 
 // Options controls how Format converts and renders a Value.
 type Options struct {
-	Type    string // "", "date", "datetime", "time", "range", "relative"
-	Pattern string // "", a preset name, or a Java-style pattern
+	Type         string // "", "date", "datetime", "time", "range", "relative"
+	Pattern      string // "", a preset name, or a Java-style pattern
+	ShowTimezone bool   // append the timezone name/offset to formatted date/time output
 }
 
 // Format renders v according to ctx and o.
 // With empty options, it returns v.String() byte for byte.
 func Format(v Value, ctx Context, o Options) (string, error) {
-	if o.Type == "" && o.Pattern == "" {
+	if o.Type == "" && o.Pattern == "" && !o.ShowTimezone {
 		return v.String(), nil
 	}
 
@@ -34,7 +35,7 @@ func Format(v Value, ctx Context, o Options) (string, error) {
 		return "", err
 	}
 
-	return renderValue(converted, ctx, o.Pattern)
+	return renderValue(converted, ctx, o.Pattern, o.ShowTimezone)
 }
 
 func resolveLang(v Value, ctx Context) Lang {
@@ -65,15 +66,8 @@ var namedPresets = map[string]map[Lang]presetPatterns{
 	},
 }
 
-func renderValue(v Value, ctx Context, pattern string) (string, error) {
-	if pattern == "" {
-		return v.String(), nil
-	}
-
+func renderValue(v Value, ctx Context, pattern string, showTZ bool) (string, error) {
 	preset := strings.ToLower(pattern)
-	if preset == "iso" {
-		return v.String(), nil
-	}
 
 	switch v.Kind {
 	case KSpan:
@@ -83,15 +77,24 @@ func renderValue(v Value, ctx Context, pattern string) (string, error) {
 			endKind = KDate
 			endT = v.End.AddDate(0, 0, -1)
 		}
-		left, err := renderValue(Value{Kind: endKind, T: v.T, Local: v.Local, Lang: v.Lang}, ctx, pattern)
+		left, err := renderValue(Value{Kind: endKind, T: v.T, Local: v.Local, Lang: v.Lang}, ctx, pattern, false)
 		if err != nil {
 			return "", err
 		}
-		right, err := renderValue(Value{Kind: endKind, T: endT, Local: v.Local, Lang: v.Lang}, ctx, pattern)
+		right, err := renderValue(Value{Kind: endKind, T: endT, Local: v.Local, Lang: v.Lang}, ctx, pattern, false)
 		if err != nil {
 			return "", err
 		}
-		return left + " → " + right, nil
+		out := left + " → " + right
+		if showTZ && preset != "unix" {
+			leftTZ := formatTimezone(v.T, ctx)
+			rightTZ := formatTimezone(endT, ctx)
+			if leftTZ == rightTZ {
+				return out + " " + leftTZ, nil
+			}
+			return left + " " + leftTZ + " → " + right + " " + rightTZ, nil
+		}
+		return out, nil
 
 	case KList:
 		lines := make([]string, len(v.Items))
@@ -99,7 +102,7 @@ func renderValue(v Value, ctx Context, pattern string) (string, error) {
 			if item.Lang == "" {
 				item.Lang = v.Lang
 			}
-			s, err := renderValue(item, ctx, pattern)
+			s, err := renderValue(item, ctx, pattern, showTZ)
 			if err != nil {
 				return "", err
 			}
@@ -109,6 +112,35 @@ func renderValue(v Value, ctx Context, pattern string) (string, error) {
 			lines[i] = s
 		}
 		return strings.Join(lines, "\n"), nil
+	}
+
+	out, err := renderScalar(v, ctx, pattern, preset)
+	if err != nil {
+		return "", err
+	}
+	if showTZ && preset != "unix" && (v.Kind == KDate || v.Kind == KDateTime || v.Kind == KTime) {
+		out += " " + formatTimezone(v.T, ctx)
+	}
+	return out, nil
+}
+
+func formatTimezone(t time.Time, ctx Context) string {
+	loc := t.Location()
+	if loc == nil {
+		loc = ctxLoc(ctx)
+	}
+	name := loc.String()
+	if name == "" || name == "Local" {
+		if abbr, _ := t.Zone(); abbr != "" {
+			return abbr
+		}
+	}
+	return name
+}
+
+func renderScalar(v Value, ctx Context, pattern, preset string) (string, error) {
+	if pattern == "" || preset == "iso" {
+		return v.String(), nil
 	}
 
 	switch preset {
