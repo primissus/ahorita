@@ -443,6 +443,67 @@ func TestRun(t *testing.T) {
 			wantCode:   0,
 			wantStdout: "2026-11-14T12:30:00-08:00\n",
 		},
+		{
+			name:       "--is-valid valid expression",
+			args:       withTZ("--is-valid", "now", "+", "2d"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "true\n",
+			checkOut: func(t *testing.T, stdout, stderr string) {
+				if stderr != "" {
+					t.Errorf("stderr = %q, want empty", stderr)
+				}
+			},
+		},
+		{
+			name:       "--is-valid invalid expression",
+			args:       withTZ("--is-valid", "now", "+", "2x"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "false\n",
+			checkOut: func(t *testing.T, stdout, stderr string) {
+				if stderr != "" {
+					t.Errorf("stderr = %q, want empty", stderr)
+				}
+			},
+		},
+		{
+			name:       "-n --is-valid invalid expression omits newline",
+			args:       withTZ("-n", "--is-valid", "now", "+", "2x"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "false",
+			checkOut: func(t *testing.T, stdout, stderr string) {
+				if stderr != "" {
+					t.Errorf("stderr = %q, want empty", stderr)
+				}
+			},
+		},
+		{
+			name:       "--strict --is-valid ambiguous expression returns false",
+			args:       withTZ("--strict", "--is-valid", "end", "of", "day,", "today"),
+			terminal:   true,
+			wantCode:   0,
+			wantStdout: "false\n",
+			checkOut: func(t *testing.T, stdout, stderr string) {
+				if stderr != "" {
+					t.Errorf("stderr = %q, want empty", stderr)
+				}
+			},
+		},
+		{
+			name:       "--is-valid with stdin lines",
+			args:       withTZ("--is-valid"),
+			stdin:      "today\nnow + 2x\ntomorrow\n",
+			terminal:   false,
+			wantCode:   0,
+			wantStdout: "true\nfalse\ntrue\n",
+			checkOut: func(t *testing.T, stdout, stderr string) {
+				if stderr != "" {
+					t.Errorf("stderr = %q, want empty", stderr)
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {

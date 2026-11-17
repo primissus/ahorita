@@ -201,10 +201,10 @@ func TestLoad(t *testing.T) {
 		},
 		{
 			name:     "all remaining settings flags and output switches",
-			args:     []string{"-n", "-c", "--json", "--explain", "-o", "/tmp/out.txt", "-f", "dd-MM-yyyy", "--week-one", "full", "--month-overflow", "overflow", "--count-inclusive", "today"},
+			args:     []string{"-n", "-c", "--json", "--explain", "--is-valid", "-o", "/tmp/out.txt", "-f", "dd-MM-yyyy", "--week-one", "full", "--month-overflow", "overflow", "--count-inclusive", "today"},
 			wantArgs: []string{"today"},
 			check: func(t *testing.T, s settings) {
-				if !s.noNewline || !s.copy || !s.json || !s.explain {
+				if !s.noNewline || !s.copy || !s.json || !s.explain || !s.isValid {
 					t.Errorf("flags not set: %+v", s)
 				}
 				if s.output != "/tmp/out.txt" {

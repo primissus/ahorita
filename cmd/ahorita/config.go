@@ -28,8 +28,8 @@ type settings struct {
 	configPath string
 	configCmd  string
 	// output switches, flags only:
-	noNewline, copy, json, explain, saveConfig bool
-	output                                     string
+	noNewline, copy, json, explain, isValid, saveConfig bool
+	output                                              string
 }
 
 type settingValue struct {
@@ -259,6 +259,7 @@ func load(args []string, getenv func(string) string, readFile func(string) ([]by
 	fs.BoolVar(&s.copy, "c", false, "copy output to clipboard")
 	fs.BoolVar(&s.json, "json", false, "print structured JSON")
 	fs.BoolVar(&s.explain, "explain", false, "print evaluation steps")
+	fs.BoolVar(&s.isValid, "is-valid", false, "print true or false whether the expression is valid")
 	fs.BoolVar(&s.saveConfig, "save-config", false, "save current settings as defaults to config file")
 	fs.StringVar(&s.configCmd, "config", "", "get, set, unset, or list config settings (e.g. --config set format=rfc)")
 	fs.StringVar(&configFile, "config-file", "", "path to config file")

@@ -130,6 +130,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, e env) int {
 
 	for _, input := range inputs {
 		res := expr.Run(input, ctx, s.opts, s.explain)
+		if s.isValid {
+			if res.Error == nil {
+				outLines = append(outLines, "true")
+			} else {
+				outLines = append(outLines, "false")
+			}
+			continue
+		}
 		if s.json {
 			data, err := json.Marshal(res)
 			if err != nil {

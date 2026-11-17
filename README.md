@@ -71,6 +71,7 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 | `-c` | — | — | Copy output (without trailing newline) to clipboard |
 | `--json` | — | — | Print JSON (`Result` object, one per line) |
 | `--explain` | — | — | Print evaluation stages to stderr (or inside JSON with `--json`) |
+| `--is-valid` | — | — | Print `true` or `false` whether the expression is valid |
 | `--config` | — | `get`/`set`/`unset`/`list` | Inspect or update persistent config settings (`--config set format=human`) |
 | `--config-file` | — | path | Config file path (errors if missing) |
 | `-o`, `--output` | — | path | Write output to file instead of stdout |
