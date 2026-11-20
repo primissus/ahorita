@@ -112,3 +112,251 @@ func TestArith(t *testing.T) {
 		})
 	}
 }
+
+func TestScalarArithmeticAndMathStages(t *testing.T) {
+	ctx := testRefContext(t)
+	tests := []struct{ input, want string }{
+		{"5 days + 1", "6d"}, {"5 days - 1", "4d"}, {"5 days * 2", "10d"}, {"6 days / 2", "3d"},
+		{"1 week + 1", "14d"}, {"2h + 0.5", "2h 30m"}, {"5 + 2 * 3", "11"},
+		{"from last friday to friday, in weeks, + 0.6, fixed 2", "0.74 weeks"},
+		{"5 / 2, round", "3"}, {"5 / 2, ceil", "3"}, {"5 / 2, floor", "2"},
+		{"0 - 2, abs", "2"}, {"round(5 / 2)", "3"}, {"1 / 8, fix 3", "0.125"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			v, err := Eval(tt.input, ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v.String() != tt.want {
+				t.Fatalf("got %q want %q", v.String(), tt.want)
+			}
+		})
+	}
+	for _, input := range []string{"5 / 0", "1d 2h + 1", "5d / 2", "1, fix 16"} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := Eval(input, ctx); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestUnitAwareNumberConversionsAndArithmetic(t *testing.T) {
+	baseCtx := testRefContext(t)
+	fridayCtx := baseCtx
+	fridayCtx.Now = time.Date(2026, time.November, 20, 10, 0, 0, 0, baseCtx.Loc)
+	wednesdayCtx := baseCtx
+	wednesdayCtx.Now = time.Date(2026, time.November, 11, 10, 0, 0, 0, baseCtx.Loc)
+
+	tests := []struct {
+		name    string
+		ctx     Context
+		input   string
+		want    string
+		wantErr string
+	}{
+		// Target pipeline across contexts
+		{
+			name:  "from last friday to this friday on Saturday",
+			ctx:   baseCtx,
+			input: "from last friday to this friday, in days, + 1, in weeks",
+			want:  "0.29 weeks",
+		},
+		{
+			name:  "from last friday to this friday on Friday",
+			ctx:   fridayCtx,
+			input: "from last friday to this friday, in days, + 1, in weeks",
+			want:  "1.29 weeks",
+		},
+		{
+			name:  "from last friday to this friday on Wednesday",
+			ctx:   wednesdayCtx,
+			input: "from last friday to this friday, in days, + 1, in weeks",
+			want:  "1.29 weeks",
+		},
+
+		// Arithmetic unit propagation (+, -, *, /)
+		{
+			name:  "add unitless rhs then convert",
+			ctx:   baseCtx,
+			input: "2026-11-16 .. 2026-11-20, in days, + 2, in weeks",
+			want:  "1 week",
+		},
+		{
+			name:  "subtract unitless rhs then convert",
+			ctx:   baseCtx,
+			input: "2026-11-16 .. 2026-11-20, in days, - 1, in hours",
+			want:  "96 hours",
+		},
+		{
+			name:  "multiply by unitless rhs then convert",
+			ctx:   baseCtx,
+			input: "2026-11-16 .. 2026-11-20, in days, * 2, in hours",
+			want:  "240 hours",
+		},
+		{
+			name:  "divide by unitless rhs then convert",
+			ctx:   baseCtx,
+			input: "14d in days, / 2, in weeks",
+			want:  "1 week",
+		},
+		{
+			name:  "add unitless lhs to unit-bearing rhs then convert",
+			ctx:   baseCtx,
+			input: "1 + (days from 2026-11-16 to 2026-11-17), in hours",
+			want:  "48 hours",
+		},
+		{
+			name:  "multiply unitless lhs by unit-bearing rhs then convert",
+			ctx:   baseCtx,
+			input: "2 * (days from 2026-11-16 to 2026-11-17), in hours",
+			want:  "48 hours",
+		},
+
+		// Mismatched compatible units in KNumber +/- KNumber
+		{
+			name:  "add days and hours converts rhs into lhs unit",
+			ctx:   baseCtx,
+			input: "(days from 2026-11-16 to 2026-11-17) + (hours from 2026-11-16 00:00 to 2026-11-16 12:00)",
+			want:  "1.5 days",
+		},
+		{
+			name:  "add days and hours then convert to hours",
+			ctx:   baseCtx,
+			input: "(days from 2026-11-16 to 2026-11-17) + (hours from 2026-11-16 00:00 to 2026-11-16 12:00), in hours",
+			want:  "36 hours",
+		},
+		{
+			name:  "subtract hours from days then convert to hours",
+			ctx:   baseCtx,
+			input: "(days from 2026-11-16 to 2026-11-18) - (hours from 2026-11-16 00:00 to 2026-11-16 12:00), in hours",
+			want:  "36 hours",
+		},
+
+		// Fractional conversions & math stage preservation
+		{
+			name:  "fractional days to hours without truncation",
+			ctx:   baseCtx,
+			input: "yesterday 2pm - now, in days, in hours",
+			want:  "-24.5 hours",
+		},
+		{
+			name:  "math stages preserve unit before conversion",
+			ctx:   baseCtx,
+			input: "yesterday 2pm - now, in days, abs, ceil, in hours",
+			want:  "48 hours",
+		},
+
+		// Same-unit identity
+		{
+			name:  "business days to business days identity",
+			ctx:   baseCtx,
+			input: "2026-11-16 .. 2026-11-20, in business days, in business days",
+			want:  "4 business days",
+		},
+
+		// Month-family conversions across arithmetic
+		{
+			name:  "months plus 6 in years",
+			ctx:   baseCtx,
+			input: "1y in months, + 6, in years",
+			want:  "1.5 years",
+		},
+		{
+			name:  "quarters plus 2 in halves",
+			ctx:   baseCtx,
+			input: "1y in quarters, + 2, in halves",
+			want:  "3 halves",
+		},
+
+		// Counted unit conversion
+		{
+			name:  "counted days plus 1 in weeks",
+			ctx:   baseCtx,
+			input: "days to 2027, + 1, in weeks",
+			want:  "7 weeks",
+		},
+
+		// Error cases
+		{
+			name:    "unitless number conversion errors",
+			ctx:     baseCtx,
+			input:   "5, in weeks",
+			wantErr: "cannot convert a number to week",
+		},
+		{
+			name:    "weekday count remains unitless",
+			ctx:     baseCtx,
+			input:   "how many mondays between today and 2026-12-31, in days",
+			wantErr: "cannot convert a number to day",
+		},
+		{
+			name:    "fixed to month family errors",
+			ctx:     baseCtx,
+			input:   "14d in days, in months",
+			wantErr: "no fixed length",
+		},
+		{
+			name:    "month family to fixed errors",
+			ctx:     baseCtx,
+			input:   "1y in months, in days",
+			wantErr: "no fixed length",
+		},
+		{
+			name:    "fixed to business days errors",
+			ctx:     baseCtx,
+			input:   "14d in days, in business days",
+			wantErr: "business days depend on the calendar",
+		},
+		{
+			name:    "business days to hours errors",
+			ctx:     baseCtx,
+			input:   "2026-11-16 .. 2026-11-20, in business days, in hours",
+			wantErr: "no fixed length",
+		},
+		{
+			name:    "incompatible units in addition error",
+			ctx:     baseCtx,
+			input:   "(days from 2026-11-16 to 2026-11-17) + (months from 2026-01-01 to 2026-02-01)",
+			wantErr: "no fixed length",
+		},
+		{
+			name:    "product of two unit-bearing numbers drops unit",
+			ctx:     baseCtx,
+			input:   "(days from 2026-11-16 to 2026-11-18) * (days from 2026-11-16 to 2026-11-18), in hours",
+			wantErr: "cannot convert a number to hour",
+		},
+		{
+			name:    "quotient of two unit-bearing numbers drops unit",
+			ctx:     baseCtx,
+			input:   "(days from 2026-11-16 to 2026-11-20) / (days from 2026-11-16 to 2026-11-18), in hours",
+			wantErr: "cannot convert a number to hour",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Eval(tc.input, tc.ctx)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("Eval(%q) = %s, want error containing %q", tc.input, got.String(), tc.wantErr)
+				}
+				var evalErr *Error
+				if !errors.As(err, &evalErr) {
+					t.Fatalf("error type = %T, want *Error", err)
+				}
+				if !strings.Contains(evalErr.Msg, tc.wantErr) {
+					t.Errorf("error = %q, want substring %q", evalErr.Msg, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Eval(%q) error: %v", tc.input, err)
+			}
+			if got.String() != tc.want {
+				t.Errorf("Eval(%q) = %q, want %q", tc.input, got.String(), tc.want)
+			}
+		})
+	}
+}

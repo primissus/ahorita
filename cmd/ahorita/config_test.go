@@ -361,6 +361,30 @@ func TestLoad(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "units short flag",
+			args: []string{"--units", "short"},
+			check: func(t *testing.T, s settings) {
+				if s.opts.Units != "short" {
+					t.Errorf("Units = %q, want short", s.opts.Units)
+				}
+			},
+		},
+		{
+			name: "AHORITA_UNITS overridden by --units flag",
+			args: []string{"--units", "long"},
+			env:  map[string]string{"AHORITA_UNITS": "none"},
+			check: func(t *testing.T, s settings) {
+				if s.opts.Units != "long" {
+					t.Errorf("Units = %q, want long", s.opts.Units)
+				}
+			},
+		},
+		{
+			name:    "invalid units flag",
+			args:    []string{"--units", "bad"},
+			wantErr: "units",
+		},
 	}
 
 	for _, tc := range tests {
@@ -410,7 +434,7 @@ func TestConfigFile(t *testing.T) {
 			name: "file setting lang and week_start",
 			env:  map[string]string{"XDG_CONFIG_HOME": "/xdg"},
 			files: map[string]string{
-				xdgPath: "# comment\nlang = \"es\" # spanish\nweek_start = sunday\n",
+				xdgPath: "# comment\nlang = \"es\" # spanish\nweek_start = sunday\nunits = \"short\"\n",
 			},
 			check: func(t *testing.T, s settings) {
 				if s.cfg.Lang != expr.ES {
@@ -418,6 +442,9 @@ func TestConfigFile(t *testing.T) {
 				}
 				if s.cfg.WeekStart != time.Sunday {
 					t.Errorf("WeekStart = %v, want Sunday", s.cfg.WeekStart)
+				}
+				if s.opts.Units != "short" {
+					t.Errorf("Units = %q, want short", s.opts.Units)
 				}
 			},
 		},

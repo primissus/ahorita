@@ -155,7 +155,7 @@ func digitAt(s string, idx int) bool {
 
 func isSingleOp(r rune) bool {
 	switch r {
-	case '+', '-', '*', ',', '|', '@', '(', ')', '=', '<', '>':
+	case '+', '-', '*', '/', ',', '|', '@', '(', ')', '=', '<', '>':
 		return true
 	default:
 		return false

@@ -32,19 +32,21 @@ type Duration struct {
 
 // Value is the unified result type returned by the evaluator.
 type Value struct {
-	Kind    Kind
-	T       time.Time // KDate: 00:00 in its zone. KDateTime. KTime: on ctx's today. KSpan: start. KDur with ends: the earlier end.
-	End     time.Time // KSpan: exclusive end. KDur with ends: the later end.
-	D       Duration  // KDur; also the length a `during` span was built from
-	N       float64   // KNumber
-	Days     bool      // KSpan: made of whole days (or KDur with ends: both ends were dates)
-	HasEnds  bool      // KDur: T and End are set (from a - b)
-	Local    bool      // typed without a zone, so @ / in may still reinterpret it
-	TodayNow bool      // KDate originated from "today"; today ± dur shifts from ctx.Now
-	Items    []Value   // KList
-	Str     string    // KText, KRecurrence
-	Note    string    // non-fatal warning (e.g. cron weekday/DST shift across zones)
-	Lang    Lang      // language of the input; set by Eval on the final value
+	Kind      Kind
+	T         time.Time // KDate: 00:00 in its zone. KDateTime. KTime: on ctx's today. KSpan: start. KDur with ends: the earlier end.
+	End       time.Time // KSpan: exclusive end. KDur with ends: the later end.
+	D         Duration  // KDur; also the length a `during` span was built from
+	N         float64   // KNumber
+	Unit      string    // original unit of a single-unit duration, or unit of a converted/counted number
+	Precision int       // decimal places plus one; zero uses the default
+	Days      bool      // KSpan: made of whole days (or KDur with ends: both ends were dates)
+	HasEnds   bool      // KDur: T and End are set (from a - b)
+	Local     bool      // typed without a zone, so @ / in may still reinterpret it
+	TodayNow  bool      // KDate originated from "today"; today ± dur shifts from ctx.Now
+	Items     []Value   // KList
+	Str       string    // KText, KRecurrence
+	Note      string    // non-fatal warning (e.g. cron weekday/DST shift across zones)
+	Lang      Lang      // language of the input; set by Eval on the final value
 }
 
 // String returns the plain ISO rendering of the value.
@@ -68,7 +70,7 @@ func (v Value) String() string {
 		}
 		return v.T.Format(time.RFC3339) + " → " + v.End.Format(time.RFC3339)
 	case KNumber:
-		return formatNumber(v.N)
+		return formatNumberWithUnit(v, "long")
 	case KList:
 		lines := make([]string, len(v.Items))
 		for i, item := range v.Items {
@@ -186,4 +188,75 @@ func formatNumber(n float64) string {
 		return "0"
 	}
 	return s
+}
+
+func formatNumberWithUnit(v Value, unitStyle string) string {
+	var numStr string
+	if v.Precision > 0 {
+		numStr = fmt.Sprintf("%.*f", v.Precision-1, v.N)
+	} else {
+		numStr = formatNumber(v.N)
+	}
+	if v.Unit == "" {
+		return numStr
+	}
+	style := strings.ToLower(unitStyle)
+	if style == "none" {
+		return numStr
+	}
+	singular := numStr == "1" || numStr == "-1"
+	if style == "short" {
+		return formatNumberShortUnit(numStr, v.Unit, singular)
+	}
+	return numStr + " " + formatUnitLong(v.Unit, singular)
+}
+
+func formatUnitLong(unit string, singular bool) string {
+	switch unit {
+	case "half":
+		if singular {
+			return "half"
+		}
+		return "halves"
+	case "businessday":
+		if singular {
+			return "business day"
+		}
+		return "business days"
+	case "workweek":
+		if singular {
+			return "work week"
+		}
+		return "work weeks"
+	default:
+		if singular {
+			return unit
+		}
+		return unit + "s"
+	}
+}
+
+func formatNumberShortUnit(numStr, unit string, singular bool) string {
+	switch unit {
+	case "millisecond":
+		return numStr + "ms"
+	case "second":
+		return numStr + "s"
+	case "minute":
+		return numStr + "m"
+	case "hour":
+		return numStr + "h"
+	case "day":
+		return numStr + "d"
+	case "week":
+		return numStr + "w"
+	case "month":
+		return numStr + "M"
+	case "quarter":
+		return numStr + "q"
+	case "year":
+		return numStr + "y"
+	default:
+		return numStr + " " + formatUnitLong(unit, singular)
+	}
 }

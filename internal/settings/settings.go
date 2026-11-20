@@ -18,7 +18,7 @@ import (
 type Values struct {
 	Cfg       expr.Config
 	Loc       *time.Location
-	Opts      expr.Options // Type, Pattern
+	Opts      expr.Options // Type, Pattern, ShowTimezone, Units
 	Calendars []string
 }
 
@@ -116,6 +116,28 @@ var Table = []Def{
 				return nil
 			default:
 				return fmt.Errorf("invalid show_timezone %q: allowed values are true, false", value)
+			}
+		},
+	},
+	{
+		Key:   "units",
+		Flags: []string{"units"},
+		Env:   "AHORITA_UNITS",
+		Usage: "unit style on numeric results (long, short, none)",
+		Get: func(v *Values) string {
+			if v.Opts.Units == "" {
+				return "long"
+			}
+			return v.Opts.Units
+		},
+		Apply: func(v *Values, value string) error {
+			val := strings.ToLower(value)
+			switch val {
+			case "long", "short", "none":
+				v.Opts.Units = val
+				return nil
+			default:
+				return fmt.Errorf("invalid units %q: allowed values are long, short, none", value)
 			}
 		},
 	},
@@ -365,6 +387,8 @@ func Lookup(name string) (*Def, bool) {
 		norm = "week_start"
 	case "show_tz":
 		norm = "show_timezone"
+	case "unit_style":
+		norm = "units"
 	case "custom_format":
 		norm = "format"
 	case "timezone":
@@ -406,6 +430,8 @@ func Reset(v *Values, key string, defaults Values) bool {
 		v.Loc = defaults.Loc
 	case "show_timezone":
 		v.Opts.ShowTimezone = defaults.Opts.ShowTimezone
+	case "units":
+		v.Opts.Units = defaults.Opts.Units
 	case "lang":
 		v.Cfg.Lang = defaults.Cfg.Lang
 	case "strict":

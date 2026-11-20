@@ -40,6 +40,15 @@ func (n Node) String() string {
 			parts = append(parts, arg.String())
 		}
 		return strings.Join(parts, " ")
+	case "input":
+		return ""
+	case "round", "ceil", "floor", "abs":
+		if len(n.Args) > 0 {
+			return n.Op + "(" + n.Args[0].String() + ")"
+		}
+		return n.Op
+	case "fix":
+		return "fix " + n.Text
 	case "take":
 		return "next " + n.Text
 	case "explain":
@@ -58,18 +67,24 @@ func (n Node) String() string {
 			parts[i] = printDurPart(part)
 		}
 		return strings.Join(parts, " ")
-	case "+", "-", "*":
+	case "+", "-", "*", "/":
 		if len(n.Args) < 2 {
 			return n.Op
 		}
 		lhs := n.Args[0].String()
 		rhs := n.Args[1].String()
 		switch n.Op {
-		case "*":
+		case "*", "/":
 			lhs = printGrouped(n.Args[0], "+", "-")
 			rhs = printGrouped(n.Args[1], "+", "-")
+			if n.Op == "/" {
+				rhs = printGrouped(n.Args[1], "+", "-", "*", "/")
+			}
 		case "-":
 			rhs = printGrouped(n.Args[1], "+", "-")
+		}
+		if n.Args[0].Op == "input" {
+			return n.Op + " " + rhs
 		}
 		return lhs + " " + n.Op + " " + rhs
 	case "ago":

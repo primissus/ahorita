@@ -16,6 +16,7 @@ import {
   type OutputType,
   type Result,
   type RunOptions,
+  type UnitsStyle,
   type WeekOneRule,
 } from "./engine";
 import {
@@ -44,6 +45,7 @@ interface StoredSettings {
   type: OutputType;
   format: string;
   customFormat: string;
+  units: UnitsStyle;
   explain: boolean;
   strict: boolean;
   week_start: string;
@@ -187,6 +189,7 @@ function loadInitialState(defaultTz?: string): {
     type: "",
     format: "",
     customFormat: "dd-MM-yyyy HH:mm",
+    units: "long",
     explain: false,
     strict: false,
     week_start: "monday",
@@ -438,6 +441,7 @@ export function App({ defaultNow, defaultTz }: AppProps) {
         tz: settings.tz,
         type: settings.type,
         format: effectiveFormat,
+        units: settings.units,
         explain: settings.explain,
         lang: settings.lang,
         strict: settings.strict,
@@ -1425,6 +1429,24 @@ export function App({ defaultNow, defaultTz }: AppProps) {
             >
               <option value="clamp">clamp</option>
               <option value="overflow">overflow</option>
+            </select>
+          </div>
+
+          <div className="setting-item">
+            <label htmlFor="setting-units">Units</label>
+            <select
+              id="setting-units"
+              value={settings.units}
+              onChange={(e) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  units: e.target.value as UnitsStyle,
+                }))
+              }
+            >
+              <option value="long">long</option>
+              <option value="short">short</option>
+              <option value="none">none</option>
             </select>
           </div>
 

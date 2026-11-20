@@ -107,6 +107,7 @@ func TestFormatType(t *testing.T) {
 			{Kind: KDur, D: Duration{Days: 2, Nanos: 4 * time.Hour}},
 			{Kind: KSpan, T: time.Date(2026, 12, 1, 0, 0, 0, 0, ctx.Loc), End: time.Date(2027, 1, 1, 0, 0, 0, 0, ctx.Loc), Days: true},
 			{Kind: KNumber, N: 4.5},
+			{Kind: KNumber, N: 4.5, Unit: "hour"},
 			{Kind: KText, Str: "0 0 * * 1"},
 			{Kind: KRecurrence, Str: "FREQ=WEEKLY;BYDAY=MO"},
 			{Kind: KList, Items: []Value{{Kind: KDate, T: time.Date(2026, 11, 16, 0, 0, 0, 0, ctx.Loc), Str: "Revolution Day"}}},
@@ -456,6 +457,55 @@ func TestFormatShowTimezone(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("Format(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUnitsFormat(t *testing.T) {
+	ctx := testRefContext(t)
+
+	unitVal, err := Eval("yesterday 2pm - now, in hours", ctx)
+	if err != nil {
+		t.Fatalf("Eval error: %v", err)
+	}
+	bareVal, err := Eval("how many mondays between today and 2026-12-31", ctx)
+	if err != nil {
+		t.Fatalf("Eval error: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		val     Value
+		opts    Options
+		want    string
+		wantErr string
+	}{
+		{name: "default empty units", val: unitVal, opts: Options{}, want: "-24.5 hours"},
+		{name: "explicit long units", val: unitVal, opts: Options{Units: "long"}, want: "-24.5 hours"},
+		{name: "short units", val: unitVal, opts: Options{Units: "short"}, want: "-24.5h"},
+		{name: "none units", val: unitVal, opts: Options{Units: "none"}, want: "-24.5"},
+		{name: "short units with human preset", val: unitVal, opts: Options{Pattern: "human", Units: "short"}, want: "-24.5h"},
+		{name: "none units with iso preset", val: unitVal, opts: Options{Pattern: "iso", Units: "none"}, want: "-24.5"},
+		{name: "bare number ignores units style", val: bareVal, opts: Options{Units: "short"}, want: "7"},
+		{name: "bare number with none style", val: bareVal, opts: Options{Units: "none"}, want: "7"},
+		{name: "invalid units style errors", val: unitVal, opts: Options{Units: "bogus"}, wantErr: "unknown units style"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Format(tc.val, ctx, tc.opts)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Format(%+v) err = %v, want substring %q", tc.opts, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Format(%+v) error: %v", tc.opts, err)
+			}
+			if got != tc.want {
+				t.Errorf("Format(%+v) = %q, want %q", tc.opts, got, tc.want)
 			}
 		})
 	}

@@ -133,7 +133,7 @@ func TestEdge(t *testing.T) {
 			input: "how many hours between 2026-03-08 and 2026-03-09",
 			ctx:   nyMar8,
 			// 2026-03-08T00:00-05:00 (05:00Z) to 2026-03-09T00:00-04:00 (04:00Z) is 23 real hours.
-			want: "23",
+			want: "23 hours",
 		},
 
 		// --- DST end (America/New_York, 2026-11-01 02:00 -> 01:00) ---
@@ -162,7 +162,7 @@ func TestEdge(t *testing.T) {
 			input: "how many hours between 2026-11-01 and 2026-11-02",
 			ctx:   nyNov1,
 			// 2026-11-01T00:00-04:00 (04:00Z) to 2026-11-02T00:00-05:00 (05:00Z) is 25 real hours.
-			want: "25",
+			want: "25 hours",
 		},
 
 		// --- Leap years ---
@@ -343,7 +343,7 @@ func TestEdge(t *testing.T) {
 			input: "how many days between 2026-11-16 and 2026-11-20",
 			ctx:   inclusiveCtx,
 			// Nov 16..20 has 4 steps + 1 inclusive = 5 days.
-			want: "5",
+			want: "5 days",
 		},
 		{
 			name:  "settings/week_one_iso_h2",

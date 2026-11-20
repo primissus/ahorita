@@ -2,6 +2,7 @@ package expr
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -198,7 +199,7 @@ func classifyStage(n Node) (stageClass, int) {
 			return classifyStage(n.Args[0])
 		}
 		return classOther, 0
-	case "+", "-", "*":
+	case "+", "-", "*", "/":
 		cur := n
 		for len(cur.Args) > 0 {
 			switch cur.Op {
@@ -441,9 +442,45 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		return Value{Kind: KDur, D: d}, nil
+		unit := ""
+		if len(n.Args) == 1 {
+			unit = n.Args[0].Op
+		}
+		return Value{Kind: KDur, D: d, Unit: unit}, nil
 
-	case "+", "-", "*":
+	case "input":
+		return in, nil
+	case "round", "ceil", "floor", "abs", "fix":
+		v := in
+		if len(n.Args) > 0 {
+			var err error
+			v, err = ev.node(n.Args[0], in)
+			if err != nil {
+				return Value{}, err
+			}
+		}
+		if v.Kind != KNumber {
+			return Value{}, &Error{Pos: n.Pos, Msg: "math functions require a number"}
+		}
+		switch n.Op {
+		case "round":
+			v.N = math.Round(v.N)
+		case "ceil":
+			v.N = math.Ceil(v.N)
+		case "floor":
+			v.N = math.Floor(v.N)
+		case "abs":
+			v.N = math.Abs(v.N)
+		case "fix":
+			digits, err := strconv.Atoi(n.Text)
+			if err != nil || digits < 0 || digits > 15 {
+				return Value{}, &Error{Pos: n.Pos, Msg: "decimal places must be between 0 and 15"}
+			}
+			v.Precision = digits + 1
+		}
+		return v, nil
+
+	case "+", "-", "*", "/":
 		if len(n.Args) < 2 {
 			return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("invalid %s expression", n.Op)}
 		}
@@ -462,6 +499,21 @@ func (ev *evaluator) node(n Node, in Value) (Value, error) {
 			return evalSub(n.Pos, lhs, rhs, ev.ctx)
 		case "*":
 			return evalMul(n.Pos, lhs, rhs)
+		case "/":
+			if rhs.Kind != KNumber {
+				return Value{}, &Error{Pos: n.Pos, Msg: "divisor must be a number"}
+			}
+			if rhs.N == 0 {
+				return Value{}, &Error{Pos: n.Pos, Msg: "division by zero"}
+			}
+			if lhs.Kind == KNumber {
+				unit := ""
+				if rhs.Unit == "" {
+					unit = lhs.Unit
+				}
+				return Value{Kind: KNumber, N: lhs.N / rhs.N, Unit: unit}, nil
+			}
+			return scaleValue(n.Pos, lhs, Value{Kind: KNumber, N: 1 / rhs.N}, true)
 		default:
 			return Value{}, &Error{Pos: n.Pos, Msg: fmt.Sprintf("unsupported operator %q", n.Op)}
 		}

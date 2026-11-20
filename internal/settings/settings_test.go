@@ -29,6 +29,10 @@ func TestApplyAndGet(t *testing.T) {
 		{name: "show_timezone true", key: "show_timezone", val: "TRUE", wantGet: "true"},
 		{name: "show_timezone false", key: "show_timezone", val: "false", wantGet: "false"},
 		{name: "show_timezone bad", key: "show_timezone", val: "yes", wantErr: "invalid show_timezone"},
+		{name: "units long", key: "units", val: "long", wantGet: "long"},
+		{name: "units short", key: "units", val: "SHORT", wantGet: "short"},
+		{name: "units none", key: "units", val: "none", wantGet: "none"},
+		{name: "units bad", key: "units", val: "bad", wantErr: "invalid units"},
 		{name: "lang es", key: "lang", val: "ES", wantGet: "es"},
 		{name: "lang bad", key: "lang", val: "fr", wantErr: "invalid lang"},
 		{name: "strict true", key: "strict", val: "true", wantGet: "true"},
@@ -75,7 +79,7 @@ func TestApplyAndGet(t *testing.T) {
 }
 
 func TestFlagTakesValue(t *testing.T) {
-	if !FlagTakesValue("tz") || !FlagTakesValue("t") || !FlagTakesValue("day-week-start") {
+	if !FlagTakesValue("tz") || !FlagTakesValue("t") || !FlagTakesValue("day-week-start") || !FlagTakesValue("units") {
 		t.Error("expected value flags to return true")
 	}
 	if FlagTakesValue("strict") || FlagTakesValue("count-inclusive") || FlagTakesValue("z") || FlagTakesValue("show-tz") || FlagTakesValue("show-timezone") || FlagTakesValue("unknown") {
@@ -131,6 +135,9 @@ func TestLookupAndReset(t *testing.T) {
 		{input: "AHORITA_WEEK_START", wantKey: "week_start", wantOK: true},
 		{input: "day-week-start", wantKey: "week_start", wantOK: true},
 		{input: "show-tz", wantKey: "show_timezone", wantOK: true},
+		{input: "units", wantKey: "units", wantOK: true},
+		{input: "unit-style", wantKey: "units", wantOK: true},
+		{input: "AHORITA_UNITS", wantKey: "units", wantOK: true},
 		{input: "custom-format", wantKey: "format", wantOK: true},
 		{input: "timezone", wantKey: "tz", wantOK: true},
 		{input: "language", wantKey: "lang", wantOK: true},
@@ -161,6 +168,7 @@ func TestLookupAndReset(t *testing.T) {
 		"format":          "human",
 		"tz":              "America/Mexico_City",
 		"show_timezone":   "true",
+		"units":           "short",
 		"lang":            "es",
 		"strict":          "true",
 		"week_start":      "sunday",

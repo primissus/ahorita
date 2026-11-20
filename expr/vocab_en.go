@@ -5,6 +5,8 @@ package expr
 // An empty value marks a filler word that Normalize drops.
 var vocabEN = map[string]string{
 	// Values
+	"round": "round", "ceil": "ceil", "floor": "floor", "abs": "abs",
+	"fix": "fix", "fixed": "fix",
 	"now":       "now",
 	"today":     "today",
 	"yesterday": "yesterday",

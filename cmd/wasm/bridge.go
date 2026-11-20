@@ -24,6 +24,7 @@ type bridgeOptions struct {
 	Type           *string         `json:"type"`
 	Format         *string         `json:"format"`
 	ShowTimezone   json.RawMessage `json:"show_timezone"`
+	Units          *string         `json:"units"`
 	Explain        *bool           `json:"explain"`
 	Lang           *string         `json:"lang"`
 	Strict         json.RawMessage `json:"strict"`
@@ -97,6 +98,9 @@ func evalBridge(input, optsJSON string, rt runtimeEnv) (expr.Result, error) {
 		return expr.Result{}, err
 	}
 	if err := applyBoolSetting(&vals, "show_timezone", raw.ShowTimezone); err != nil {
+		return expr.Result{}, err
+	}
+	if err := applyStringSetting(&vals, "units", raw.Units, true); err != nil {
 		return expr.Result{}, err
 	}
 	if err := applyStringSetting(&vals, "lang", raw.Lang, true); err != nil {

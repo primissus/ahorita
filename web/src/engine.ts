@@ -38,12 +38,14 @@ export type OutputType = "" | "date" | "datetime" | "time" | "range" | "relative
 export type Language = "en" | "es";
 export type WeekOneRule = "iso" | "first-day" | "full" | "days";
 export type MonthOverflowRule = "clamp" | "overflow";
+export type UnitsStyle = "long" | "short" | "none";
 
 export interface RunOptions {
   now?: string;
   tz?: string;
   type?: OutputType;
   format?: string;
+  units?: UnitsStyle;
   explain?: boolean;
   lang?: Language;
   strict?: boolean;

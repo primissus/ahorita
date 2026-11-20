@@ -138,9 +138,46 @@ func hasNonBiz(d Duration) bool {
 	return d.Months != 0 || d.Days != 0 || d.Nanos != 0
 }
 
+func addSubNumbers(pos int, lhs, rhs Value, sub bool) (Value, error) {
+	unit := lhs.Unit
+	rhsN := rhs.N
+	switch {
+	case lhs.Unit == rhs.Unit:
+	case lhs.Unit == "":
+		unit = rhs.Unit
+	case rhs.Unit == "":
+	default:
+		converted, err := convertNumberUnit(pos, rhs.N, rhs.Unit, lhs.Unit)
+		if err != nil {
+			return Value{}, err
+		}
+		rhsN = converted
+	}
+	n := lhs.N + rhsN
+	if sub {
+		n = lhs.N - rhsN
+	}
+	return Value{Kind: KNumber, N: n, Unit: unit}, nil
+}
+
 func evalAdd(pos int, lhs, rhs Value, ctx Context) (Value, error) {
+	if lhs.Kind == KNumber && rhs.Kind == KNumber {
+		return addSubNumbers(pos, lhs, rhs, false)
+	}
+	if lhs.Kind == KDur && rhs.Kind == KNumber {
+		var err error
+		rhs, err = numberInUnit(pos, rhs.N, lhs.Unit)
+		if err != nil {
+			return Value{}, err
+		}
+	}
 	if rhs.Kind == KDur {
-		return shiftValueByDur(pos, lhs, rhs.D, ctx, false)
+		unit := lhs.Unit
+		result, err := shiftValueByDur(pos, lhs, rhs.D, ctx, false)
+		if err == nil && lhs.Kind == KDur && unit == rhs.Unit {
+			result.Unit = unit
+		}
+		return result, err
 	}
 	return Value{}, &Error{
 		Pos: pos,
@@ -149,8 +186,23 @@ func evalAdd(pos int, lhs, rhs Value, ctx Context) (Value, error) {
 }
 
 func evalSub(pos int, lhs, rhs Value, ctx Context) (Value, error) {
+	if lhs.Kind == KNumber && rhs.Kind == KNumber {
+		return addSubNumbers(pos, lhs, rhs, true)
+	}
+	if lhs.Kind == KDur && rhs.Kind == KNumber {
+		var err error
+		rhs, err = numberInUnit(pos, rhs.N, lhs.Unit)
+		if err != nil {
+			return Value{}, err
+		}
+	}
 	if rhs.Kind == KDur {
-		return shiftValueByDur(pos, lhs, negateDuration(rhs.D), ctx, true)
+		unit := lhs.Unit
+		result, err := shiftValueByDur(pos, lhs, negateDuration(rhs.D), ctx, true)
+		if err == nil && lhs.Kind == KDur && unit == rhs.Unit {
+			result.Unit = unit
+		}
+		return result, err
 	}
 	if (lhs.Kind == KDate || lhs.Kind == KDateTime) && (rhs.Kind == KDate || rhs.Kind == KDateTime) {
 		if lhs.Kind == KDate && rhs.Kind == KDate {
@@ -258,15 +310,30 @@ func shiftValueByDur(pos int, lhs Value, d Duration, ctx Context, isSub bool) (V
 	}
 }
 
-func evalMul(pos int, lhs, rhs Value) (Value, error) {
+func evalMul(pos int, lhs, rhs Value) (Value, error) { return scaleValue(pos, lhs, rhs, false) }
+
+func scaleValue(pos int, lhs, rhs Value, division bool) (Value, error) {
+	if lhs.Kind == KNumber && rhs.Kind == KNumber {
+		unit := ""
+		switch {
+		case lhs.Unit != "" && rhs.Unit == "":
+			unit = lhs.Unit
+		case lhs.Unit == "" && rhs.Unit != "":
+			unit = rhs.Unit
+		}
+		return Value{Kind: KNumber, N: lhs.N * rhs.N, Unit: unit}, nil
+	}
+	var unit string
 	var dur Duration
 	var factor float64
 	switch {
 	case lhs.Kind == KDur && rhs.Kind == KNumber:
 		dur = lhs.D
+		unit = lhs.Unit
 		factor = rhs.N
 	case lhs.Kind == KNumber && rhs.Kind == KDur:
 		dur = rhs.D
+		unit = rhs.Unit
 		factor = lhs.N
 	default:
 		return Value{}, &Error{
@@ -275,23 +342,23 @@ func evalMul(pos int, lhs, rhs Value) (Value, error) {
 		}
 	}
 
-	if (dur.Months != 0 || dur.Days != 0 || dur.BizDays != 0) && factor != math.Trunc(factor) {
+	if (!division && (dur.Months != 0 || dur.Days != 0 || dur.BizDays != 0) && factor != math.Trunc(factor)) || float64(dur.Months)*factor != math.Trunc(float64(dur.Months)*factor) || float64(dur.Days)*factor != math.Trunc(float64(dur.Days)*factor) || float64(dur.BizDays)*factor != math.Trunc(float64(dur.BizDays)*factor) {
 		return Value{}, &Error{
 			Pos: pos,
 			Msg: "cannot multiply months or days by a fractional number",
 		}
 	}
-	intFactor := int(factor)
 	prod := float64(dur.Nanos) * factor
 	if prod > float64(math.MaxInt64) || prod < float64(math.MinInt64) {
 		return Value{}, &Error{Pos: pos, Msg: "duration out of range"}
 	}
 	return Value{
 		Kind: KDur,
+		Unit: unit,
 		D: Duration{
-			Months:  dur.Months * intFactor,
-			Days:    dur.Days * intFactor,
-			BizDays: dur.BizDays * intFactor,
+			Months:  int(float64(dur.Months) * factor),
+			Days:    int(float64(dur.Days) * factor),
+			BizDays: int(float64(dur.BizDays) * factor),
 			Nanos:   time.Duration(math.Round(prod)),
 		},
 	}, nil
@@ -364,4 +431,15 @@ func kindName(k Kind) string {
 	default:
 		return "a value"
 	}
+}
+
+func numberInUnit(pos int, n float64, unit string) (Value, error) {
+	if unit == "" {
+		return Value{}, &Error{Pos: pos, Msg: "cannot infer a unit from a mixed duration"}
+	}
+	d, err := evalDur(Node{Args: []Node{{Op: unit, Text: strconv.FormatFloat(n, 'f', -1, 64), Pos: pos}}})
+	if err != nil {
+		return Value{}, err
+	}
+	return Value{Kind: KDur, D: d, Unit: unit}, nil
 }

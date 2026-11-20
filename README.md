@@ -58,6 +58,7 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 | `-f`, `--format` | `format` | pattern or preset (`iso`, `rfc3339`, `unix`, `human`, `short`, `json`, `yaml`) | Display format |
 | `--tz` | `tz` | IANA zone, place, alias, or fuzzy name (e.g. `America/Mexico_City`, `los_angeles`, `CDMX`, `UTC`) | Default timezone (defaults to system zone) |
 | `-z`, `--show-tz`, `--show-timezone` | `show_timezone` | `true`, `false` (flag alone sets `true`) | Append timezone to formatted output |
+| `--units` | `units` | `long`, `short`, `none` | Unit display style on numeric results (default `long`) |
 | `--lang` | `lang` | `en`, `es` | Default language (defaults from `LC_ALL` / `LANG`, else `en`) |
 | `--strict` | `strict` | `true`, `false` (flag alone sets `true`) | Error on ambiguous input or out-of-order stages |
 | `--day-week-start` | `week_start` | weekday name in English or Spanish | First day of the week (default `monday`) |
@@ -92,7 +93,7 @@ ahorita --config unset format              # remove a setting from config.toml
 ahorita --config list                      # list all settings (also: ahorita --config)
 ```
 
-- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_SHOW_TIMEZONE`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
+- Every setting in the table has an environment variable named `AHORITA_` + the config key in upper case: `AHORITA_TYPE`, `AHORITA_FORMAT`, `AHORITA_TZ`, `AHORITA_SHOW_TIMEZONE`, `AHORITA_UNITS`, `AHORITA_LANG`, `AHORITA_STRICT`, `AHORITA_WEEK_START`, `AHORITA_WEEK_ONE`, `AHORITA_MONTH_OVERFLOW`, `AHORITA_COUNT_INCLUSIVE`, `AHORITA_COUNTRY`, `AHORITA_WEEKEND`, `AHORITA_CALENDAR`.
 - `AHORITA_CONFIG` overrides the config file path (errors if missing). Standard `TZ`, `LC_ALL`, and `LANG` (values starting with `es` default to Spanish) are also honored.
 - Default config file path: `$XDG_CONFIG_HOME/ahorita/config.toml`, or `~/.config/ahorita/config.toml`. Missing default files are ignored.
 - **Days-off files (`--calendar`):** plain text with one ahorita expression per line evaluating to a date (`2026-11-02`, `next friday`) or a whole-day span (`2026-12-24 .. 2027-01-02`), or an `.ics` file (all-day events and RRULEs within 1 year before to 5 years after `now`). Blank lines and `#` comments (full-line or inline) are ignored in text files. Passing `--calendar` on the CLI overrides `AHORITA_CALENDAR` and `calendar` in config.
@@ -104,6 +105,7 @@ Sample `~/.config/ahorita/config.toml`:
 # type = "date"
 # format = "human"
 # show_timezone = false
+# units = "long"
 
 # Locale and timezone
 # tz = "America/Mexico_City"
@@ -183,7 +185,14 @@ today + 3 days
 date1 - date2            → a length that remembers both ends
 2h * 3
 2 * (1h + 30m)
+5 days + 1               → 6d (the number inherits days)
+6 days / 2               → 3d
+from last friday to friday, in weeks, + 0.6, fixed 2
+5 / 2, round             → 3 (also ceil, floor, abs)
+1 / 8, fix 3             → 0.125
 ```
+
+A bare number added to or subtracted from a single-unit duration inherits that unit. Mixed durations require an explicit unit. Calendar days, months, and business days cannot have fractional components; division must yield whole components. `fix` / `fixed` controls displayed decimal places (0–15). Math functions accept numbers, either as pipeline stages or as calls such as `round(5 / 2)`.
 
 **Relative / natural language**
 ```
@@ -210,7 +219,7 @@ on sept, past year
 ```
 2h
 90m                      → 1h 30m
-180s in hours            → 0.05 (direct conversion; also millis, halfs, quarters)
+180s in hours            → 0.05 hours (direct conversion; also millis, halfs, quarters)
 yesterday 2pm - now, in hours
 during 2 days
 during 6 weeks, starting …
@@ -297,7 +306,7 @@ si hoy es viernes, hoy, sino lunes
 - Add / subtract dates and times
 - Diff two dates into a range
 - Multiply durations (days, hours)
-- Unit conversion (e.g. `90m` → `1h 30m`, `180s in hours` → `0.05`, `1y in halfs` → `2`)
+- Unit conversion (e.g. `90m` → `1h 30m`, `180s in hours` → `0.05 hours`, `1y in halfs` → `2 halves`)
 - Shorthand unit counts (`days to 2027-01-01`, `days from … to …`)
 - Boundary acronyms (`EoD`, `SoD`, `EoM`, `SoM`, `EoY`) and `of`-less shorthands (`end day`, `end minute`)
 - Conditional `if`/`else` expressions and persisted expression aliases (`name = expr`)

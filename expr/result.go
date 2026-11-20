@@ -92,9 +92,13 @@ func Run(input string, ctx Context, o Options, explain bool) Result {
 	if explain {
 		res.Explain = make([]ResultStep, len(steps))
 		for i, st := range steps {
+			valStr := st.Value.String()
+			if st.Value.Kind == KNumber {
+				valStr = formatNumberWithUnit(st.Value, o.Units)
+			}
 			res.Explain[i] = ResultStep{
 				Stage: st.Text,
-				Value: st.Value.String(),
+				Value: valStr,
 			}
 		}
 	}

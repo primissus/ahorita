@@ -402,8 +402,34 @@ func (p *parser) parseStageBody() (Node, error) {
 	if tok.Kind == Illegal || (tok.Kind == Op && tok.Text == ")") {
 		return Node{}, p.unexpectedErr(tok)
 	}
+	if tok.Kind == Op && (tok.Text == "+" || tok.Text == "-" || tok.Text == "*" || tok.Text == "/") && p.pos > 0 && !p.startsZoneOffset(0) {
+		op := p.next()
+		rhs, err := p.parseExpr(bpLowest)
+		if err != nil {
+			return Node{}, err
+		}
+		return Node{Op: op.Text, Pos: op.Pos, Args: []Node{{Op: "input", Pos: op.Pos}, rhs}}, nil
+	}
 	if tok.Kind == Word {
 		switch tok.Key {
+		case "round", "ceil", "floor", "abs":
+			p.next()
+			if p.cur().Kind == Op && p.cur().Text == "(" {
+				arg, err := p.parsePrimary(false)
+				if err != nil {
+					return Node{}, err
+				}
+				return Node{Op: tok.Key, Pos: tok.Pos, Args: []Node{arg}}, nil
+			}
+			return Node{Op: tok.Key, Pos: tok.Pos}, nil
+		case "fix":
+			p.next()
+			n := p.cur()
+			if n.Kind != Number {
+				return Node{}, p.unexpectedErr(n, "decimal places")
+			}
+			p.next()
+			return Node{Op: "fix", Pos: tok.Pos, Text: n.Text}, nil
 		case "to":
 			return p.parseToStage()
 		case "explain":
@@ -544,7 +570,7 @@ func (p *parser) parseExpr(minBP int) (Node, error) {
 			bp = bpSpan
 		case "+", "-":
 			bp = bpAdd
-		case "*":
+		case "*", "/":
 			bp = bpMul
 		}
 		if bp == 0 || bp < minBP {
@@ -552,7 +578,7 @@ func (p *parser) parseExpr(minBP int) (Node, error) {
 		}
 		opTok := p.next()
 		var rhs Node
-		if opTok.Text == "*" {
+		if opTok.Text == "*" || opTok.Text == "/" {
 			rhs, err = p.parsePostfix(true)
 		} else {
 			rhs, err = p.parseExpr(bp + 1)
@@ -695,6 +721,14 @@ func (p *parser) parsePrimary(afterMul bool) (Node, error) {
 		}
 		return Node{Op: "num", Pos: tok.Pos, Text: tok.Text}, nil
 	case Word:
+		if tok.Key == "round" || tok.Key == "ceil" || tok.Key == "floor" || tok.Key == "abs" {
+			p.next()
+			arg, err := p.parsePrimary(false)
+			if err != nil {
+				return Node{}, err
+			}
+			return Node{Op: tok.Key, Pos: tok.Pos, Args: []Node{arg}}, nil
+		}
 		if fn, ok := prefix[tok.Key]; ok {
 			return fn(p)
 		}

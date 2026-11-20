@@ -938,18 +938,98 @@ func (ev *evaluator) evalCount(n Node, in Value, explicitInclusive bool) (Value,
 	incl := explicitInclusive || ev.ctx.Cfg.CountInclusive
 	what := n.Args[0]
 	var count float64
+	unit := ""
 	switch what.Op {
 	case "weekday":
 		count, err = countUnits(what.Pos, start, end, what.Text, true, incl, ev.ctx)
 	case "unit":
 		count, err = countUnits(what.Pos, start, end, what.Text, false, incl, ev.ctx)
+		unit = what.Text
 	default:
 		return Value{}, &Error{Pos: what.Pos, Msg: fmt.Sprintf("cannot count %q", what.Op)}
 	}
 	if err != nil {
 		return Value{}, err
 	}
-	return Value{Kind: KNumber, N: count}, nil
+	return Value{Kind: KNumber, N: count, Unit: unit}, nil
+}
+
+func fixedUnitNanos(unit string) (float64, bool) {
+	switch unit {
+	case "millisecond":
+		return float64(time.Millisecond), true
+	case "second":
+		return float64(time.Second), true
+	case "minute":
+		return float64(time.Minute), true
+	case "hour":
+		return float64(time.Hour), true
+	case "day":
+		return float64(24 * time.Hour), true
+	case "week":
+		return float64(7 * 24 * time.Hour), true
+	default:
+		return 0, false
+	}
+}
+
+func monthUnitFactor(unit string) (float64, bool) {
+	switch unit {
+	case "month":
+		return 1, true
+	case "quarter":
+		return 3, true
+	case "half":
+		return 6, true
+	case "year":
+		return 12, true
+	default:
+		return 0, false
+	}
+}
+
+func convertNumberUnit(pos int, n float64, fromUnit, toUnit string) (float64, error) {
+	if fromUnit == "" {
+		return 0, &Error{Pos: pos, Msg: fmt.Sprintf("cannot convert a number to %s", toUnit)}
+	}
+	if fromUnit == toUnit {
+		return n, nil
+	}
+	if fromUnit == "businessday" {
+		return 0, &Error{
+			Pos: pos,
+			Msg: fmt.Sprintf("a business day has no fixed length; give a start: during ..., to %ss", toUnit),
+		}
+	}
+	if toUnit == "businessday" {
+		return 0, &Error{
+			Pos: pos,
+			Msg: "business days depend on the calendar; give a span or date difference",
+		}
+	}
+	srcMonth, srcIsMonth := monthUnitFactor(fromUnit)
+	dstMonth, dstIsMonth := monthUnitFactor(toUnit)
+	if srcIsMonth && dstIsMonth {
+		return n * srcMonth / dstMonth, nil
+	}
+	srcNanos, srcIsFixed := fixedUnitNanos(fromUnit)
+	dstNanos, dstIsFixed := fixedUnitNanos(toUnit)
+	if srcIsFixed && dstIsFixed {
+		return (n * srcNanos) / dstNanos, nil
+	}
+	if srcIsMonth && dstIsFixed {
+		return 0, &Error{
+			Pos: pos,
+			Msg: fmt.Sprintf("a %s has no fixed length; give a start: during ..., to %s", fromUnit, toUnit),
+		}
+	}
+	if srcIsFixed && dstIsMonth {
+		return 0, &Error{
+			Pos: pos,
+			Msg: fmt.Sprintf("a %s has no fixed length; give a start: during ..., to %s", toUnit, toUnit),
+		}
+	}
+	return 0, &Error{Pos: pos, Msg: fmt.Sprintf("cannot convert %s to %s", fromUnit, toUnit)}
 }
 
 func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, error) {
@@ -977,13 +1057,13 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 				if err != nil {
 					return Value{}, err
 				}
-				return Value{Kind: KNumber, N: float64(res)}, nil
+				return Value{Kind: KNumber, N: float64(res), Unit: target.Text}, nil
 			}
 			res, err := countUnits(target.Pos, in.T, in.End, target.Text, false, false, ev.ctx)
 			if err != nil {
 				return Value{}, err
 			}
-			return Value{Kind: KNumber, N: res}, nil
+			return Value{Kind: KNumber, N: res, Unit: target.Text}, nil
 		case KDur:
 			if in.HasEnds {
 				var res float64
@@ -1001,11 +1081,11 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 				if in.D.Months < 0 || in.D.Days < 0 || in.D.BizDays < 0 || in.D.Nanos < 0 {
 					res = -res
 				}
-				return Value{Kind: KNumber, N: res}, nil
+				return Value{Kind: KNumber, N: res, Unit: target.Text}, nil
 			}
 			if in.D.BizDays != 0 {
 				if target.Text == "businessday" {
-					return Value{Kind: KNumber, N: float64(in.D.BizDays)}, nil
+					return Value{Kind: KNumber, N: float64(in.D.BizDays), Unit: target.Text}, nil
 				}
 				return Value{}, &Error{
 					Pos: n.Pos,
@@ -1020,15 +1100,8 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 			}
 			if in.D.Months != 0 {
 				if in.D.Days == 0 && in.D.Nanos == 0 && in.D.BizDays == 0 {
-					switch target.Text {
-					case "month":
-						return Value{Kind: KNumber, N: float64(in.D.Months)}, nil
-					case "quarter":
-						return Value{Kind: KNumber, N: float64(in.D.Months) / 3.0}, nil
-					case "half":
-						return Value{Kind: KNumber, N: float64(in.D.Months) / 6.0}, nil
-					case "year":
-						return Value{Kind: KNumber, N: float64(in.D.Months) / 12.0}, nil
+					if factor, ok := monthUnitFactor(target.Text); ok {
+						return Value{Kind: KNumber, N: float64(in.D.Months) / factor, Unit: target.Text}, nil
 					}
 				}
 				return Value{}, &Error{
@@ -1037,27 +1110,22 @@ func (ev *evaluator) evalTo(n Node, in Value, explicitInclusive bool) (Value, er
 				}
 			}
 			totalNanos := float64(in.D.Days)*float64(24*time.Hour) + float64(in.D.Nanos)
-			switch target.Text {
-			case "day":
-				return Value{Kind: KNumber, N: totalNanos / float64(24*time.Hour)}, nil
-			case "week":
-				return Value{Kind: KNumber, N: totalNanos / float64(7*24*time.Hour)}, nil
-			case "hour":
-				return Value{Kind: KNumber, N: totalNanos / float64(time.Hour)}, nil
-			case "minute":
-				return Value{Kind: KNumber, N: totalNanos / float64(time.Minute)}, nil
-			case "second":
-				return Value{Kind: KNumber, N: totalNanos / float64(time.Second)}, nil
-			case "millisecond":
-				return Value{Kind: KNumber, N: totalNanos / float64(time.Millisecond)}, nil
-			case "month", "quarter", "half", "year":
+			if nanos, ok := fixedUnitNanos(target.Text); ok {
+				return Value{Kind: KNumber, N: totalNanos / nanos, Unit: target.Text}, nil
+			}
+			if _, ok := monthUnitFactor(target.Text); ok {
 				return Value{}, &Error{
 					Pos: n.Pos,
 					Msg: fmt.Sprintf("a %s has no fixed length; give a start: during ..., to %s", target.Text, target.Text),
 				}
-			default:
-				return Value{}, &Error{Pos: target.Pos, Msg: fmt.Sprintf("cannot convert duration to %q", target.Text)}
 			}
+			return Value{}, &Error{Pos: target.Pos, Msg: fmt.Sprintf("cannot convert duration to %q", target.Text)}
+		case KNumber:
+			res, err := convertNumberUnit(n.Pos, in.N, in.Unit, target.Text)
+			if err != nil {
+				return Value{}, err
+			}
+			return Value{Kind: KNumber, N: res, Unit: target.Text}, nil
 		default:
 			return Value{}, &Error{
 				Pos: n.Pos,

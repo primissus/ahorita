@@ -186,6 +186,37 @@ func TestRunBridge(t *testing.T) {
 			wantKind:  "span",
 			wantText:  "2026-11-13 → 2026-11-13",
 		},
+		{
+			name:      "default units style is long",
+			input:     "from last friday to this friday, in days, + 1, in weeks",
+			optsJSON:  `{}`,
+			defaultTZ: "America/Mexico_City",
+			wantKind:  "number",
+			wantText:  "0.29 weeks",
+		},
+		{
+			name:      "units short formats numeric result compactly",
+			input:     "from last friday to this friday, in days, + 1, in weeks",
+			optsJSON:  `{"units":"short"}`,
+			defaultTZ: "America/Mexico_City",
+			wantKind:  "number",
+			wantText:  "0.29w",
+		},
+		{
+			name:      "units none omits unit suffix",
+			input:     "from last friday to this friday, in days, + 1, in weeks",
+			optsJSON:  `{"units":"none"}`,
+			defaultTZ: "America/Mexico_City",
+			wantKind:  "number",
+			wantText:  "0.29",
+		},
+		{
+			name:      "invalid units style errors",
+			input:     "180s in hours",
+			optsJSON:  `{"units":"bogus"}`,
+			defaultTZ: "America/Mexico_City",
+			wantErr:   "invalid units",
+		},
 	}
 
 	for _, tc := range tests {

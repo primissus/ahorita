@@ -31,6 +31,12 @@ var readmeCases = []readmeCase{
 	{line: "2h * 3", input: "2h * 3", want: "6h"},
 	{line: "2 * (1h + 30m)", input: "2 * (1h + 30m)", want: "3h"},
 
+	{line: "5 days + 1               → 6d (the number inherits days)", input: "5 days + 1", want: "6d"},
+	{line: "6 days / 2               → 3d", input: "6 days / 2", want: "3d"},
+	{line: "from last friday to friday, in weeks, + 0.6, fixed 2", input: "from last friday to friday, in weeks, + 0.6, fixed 2", want: "0.74 weeks"},
+	{line: "5 / 2, round             → 3 (also ceil, floor, abs)", input: "5 / 2, round", want: "3"},
+	{line: "1 / 8, fix 3             → 0.125", input: "1 / 8, fix 3", want: "0.125"},
+
 	// Relative / natural language
 	{line: "yesterday                → today - 1d (a date)", input: "yesterday", want: "2026-11-13"},
 	{line: "2d ago                   → now - 2d (keeps the time)", input: "2d ago", want: "2026-11-12T14:30:00-06:00"},
@@ -53,16 +59,16 @@ var readmeCases = []readmeCase{
 	// Durations & ranges
 	{line: "2h", input: "2h", want: "2h"},
 	{line: "90m                      → 1h 30m", input: "90m", want: "1h 30m"},
-	{line: "180s in hours            → 0.05 (direct conversion; also millis, halfs, quarters)", input: "180s in hours", want: "0.05"},
-	{line: "yesterday 2pm - now, in hours", input: "yesterday 2pm - now, in hours", want: "-24.5"},
+	{line: "180s in hours            → 0.05 hours (direct conversion; also millis, halfs, quarters)", input: "180s in hours", want: "0.05 hours"},
+	{line: "yesterday 2pm - now, in hours", input: "yesterday 2pm - now, in hours", want: "-24.5 hours"},
 	{line: "during 2 days", input: "during 2 days", want: "2026-11-14 → 2026-11-15"},
 	{line: "during 6 weeks, starting …", input: "during 6 weeks, starting next monday", want: "2026-11-16 → 2026-12-27"},
 	// Closed inclusive date range 2026-11-16 .. 2026-11-20.
 	{line: "<a> .. <b>", input: "2026-11-16 .. 2026-11-20", want: "2026-11-16 → 2026-11-20"},
-	{line: "how many <unit> between <a> and <b>", input: "how many days between 2026-11-16 and 2026-11-20", want: "4"},
-	{line: "days to 2027-01-01       → shorthand count from today/now", input: "days to 2027-01-01", want: "48"},
-	{line: "days to 2027", input: "days to 2027", want: "48"},
-	{line: "days from 2026-11-16 to 2026-11-20", input: "days from 2026-11-16 to 2026-11-20", want: "4"},
+	{line: "how many <unit> between <a> and <b>", input: "how many days between 2026-11-16 and 2026-11-20", want: "4 days"},
+	{line: "days to 2027-01-01       → shorthand count from today/now", input: "days to 2027-01-01", want: "48 days"},
+	{line: "days to 2027", input: "days to 2027", want: "48 days"},
+	{line: "days from 2026-11-16 to 2026-11-20", input: "days from 2026-11-16 to 2026-11-20", want: "4 days"},
 
 	// Conditionals & aliases
 	{line: "if today is friday, from today to next friday, else from last friday to this friday", input: "if today is friday, from today to next friday, else from last friday to this friday", want: "2026-11-13 → 2026-11-13"},
@@ -180,7 +186,7 @@ var readmeCases = []readmeCase{
 	{line: "now to +09:00            → offsets (+09:00, -06:00, +9, UTC+2, GMT-5)", input: "now to +09:00", want: "2026-11-15T05:30:00+09:00"},
 
 	// Business days
-	{line: "<range>, to business days", input: "2026-11-20 - 2026-11-16, to business days", want: "4"},
+	{line: "<range>, to business days", input: "2026-11-20 - 2026-11-16, to business days", want: "4 business days"},
 	{line: "<day>, next business day", input: "2026-11-14, next business day", want: "2026-11-17"},
 	{line: "next business day on or after <day>", input: "next business day on or after 2026-11-17", want: "2026-11-17"},
 	{line: "<day> ± <n> business days", input: "2026-11-13 + 3 business days", want: "2026-11-19"},
