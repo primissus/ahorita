@@ -66,6 +66,7 @@
 - **Decision:** `last week`, `next month`, `in Q3`, `on sept`, `2nd week, h2` give a span. `-t date` shows its start, `-t range` the whole span, `end of …` its end. `today - 1w` stays a single date.
 - **Why:** A period has two ends; picking one silently loses the other.
 - **Rejected:** `next month` = today + 1 month.
+- **Amendment (2026-11-20):** `A to B` is a span like `from A to B` when B is a value (`9am to 5pm`, `monday to friday`). When B is a unit, keyword or zone (`now to Tokyo`, `3 days to hours`), `to` stays the convert stage. A zone typed on the end of a span applies to a clock-only start too (`sat 12:30 to sat 3 pm pst` is PST on both ends); an explicit zone on the start wins.
 - **Status:** current
 
 ### 2026-11-14 · 2.4 Unit letters are case-sensitive
@@ -159,6 +160,7 @@
 ### 2026-11-15 · 4.2 Timezone abbreviations
 - **Decision:** Accept a fixed list of unambiguous abbreviations (`JST`, `EST`, `PST`, etc.) as fixed offsets. Ambiguous abbreviations (`CST`, `CDT`, `IST`, `BST`, `AST`) return an error listing candidates.
 - **Why:** Prevents silent misinterpretation of `CST` or `IST` across regions. Answered in chat (★ accepted).
+- **Amendment (2026-11-20):** an ambiguous abbreviation resolves to the local zone when the local zone currently uses that abbreviation (`CST` in America/Mexico_City); otherwise, and under `--strict`, it still errors. A bare abbreviation may follow a clock: `sat 12:30 pm pst`.
 - **Rejected:** Config mapping per abbreviation; rejecting all abbreviations.
 - **Status:** current
 
@@ -201,6 +203,7 @@
 - **Decision:** ISO (`2026-11-16`, `2026-11-16T14:30:00-06:00`).
 - **Why:** Suits scripts and sorts correctly.
 - **Rejected:** Human-readable by default.
+- **Amendment (2026-11-20):** a date-time or time result in a zone whose offset differs from the local zone gets the zone name appended (`2026-11-21T12:30:00-08:00 PST`). Not for UTC, bare offsets, or an explicit `-f` pattern. `--show-timezone` forces it always.
 - **Status:** current
 
 ### 2026-11-14 · 5.4 Flags

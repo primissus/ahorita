@@ -35,7 +35,7 @@ func TestFormatType(t *testing.T) {
 		{name: "today unknown type error", input: "today", typ: "week", wantErr: []string{"date", "datetime", "time", "range", "relative"}},
 
 		// Additional coverage across kinds and edge cases
-		{name: "datetime in Tokyo keeps own zone date", input: "now to Asia/Tokyo", typ: "date", want: "2026-11-15"},
+		{name: "datetime in Tokyo keeps own zone date", input: "now to Asia/Tokyo", typ: "date", want: "2026-11-15 Asia/Tokyo"},
 		{name: "today time", input: "today", typ: "time", want: "00:00"},
 		{name: "today range", input: "today", typ: "range", want: "0s"},
 		{name: "tomorrow range", input: "tomorrow", typ: "range", want: "1d"},

@@ -174,6 +174,9 @@ var readmeCases = []readmeCase{
 	// 14:30-06:00 equals 20:30Z.
 	{line: "…, to UTC", input: "now, to UTC", want: "2026-11-14T20:30:00Z"},
 	{line: "now to Tokyo             → places (IANA city names, case- and accent-insensitive)", input: "now to Tokyo", want: "2026-11-15T05:30:00+09:00"},
+	{line: "sat 12:30 pm pst, to cst  → bare zone after a clock; CST = your local zone when it uses CST", input: "sat 12:30 pm pst, to cst", want: "2026-11-14T14:30:00-06:00"},
+	{line: "9am to 5pm              → a span without \"from\"", input: "9am to 5pm", want: "2026-11-14T09:00:00-06:00 → 2026-11-14T17:00:00-06:00"},
+	{line: "9am to 5pm @ Tokyo       → a zone on the end applies to both ends", input: "9am to 5pm @ Tokyo", want: "2026-11-14T09:00:00+09:00 → 2026-11-14T17:00:00+09:00"},
 	{line: "now to Los Angeles       → unquoted multi-word places", input: "now to Los Angeles", want: "2026-11-14T12:30:00-08:00"},
 	// CDMX is America/Mexico_City (UTC-6), keeping the 14:30 local wall time.
 	{line: "now to CDMX              → aliases (CDMX, NYC, DC, SF, LA, Tokio, Londres, …)", input: "now to CDMX", want: "2026-11-14T14:30:00-06:00"},

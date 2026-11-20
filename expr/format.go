@@ -26,6 +26,17 @@ func Format(v Value, ctx Context, o Options) (string, error) {
 		return "", fmt.Errorf("unknown units style %q; valid styles: long, short, none", o.Units)
 	}
 
+	// Auto-show the zone when a single instant is in a zone other than the local one.
+	if o.Pattern == "" && (v.Kind == KDateTime || v.Kind == KTime) && !v.T.IsZero() {
+		_, off := v.T.Zone()
+		// UTC ("Z") and bare offsets ("-05:00") already say it all.
+		if n := v.T.Location().String(); n != "UTC" && n != "" && !strings.ContainsAny(n[:1], "+-") {
+			if _, localOff := v.T.In(ctxLoc(ctx)).Zone(); off != localOff {
+				o.ShowTimezone = true
+			}
+		}
+	}
+
 	if o.Type == "" && o.Pattern == "" && !o.ShowTimezone && (units == "" || units == "long") {
 		return v.String(), nil
 	}

@@ -57,7 +57,7 @@ ahorita -o standup.ics 'every monday 9am, to ics'
 | `-t`, `--type` | `type` | `date`, `datetime`, `time`, `range`, `relative` | Output value type |
 | `-f`, `--format` | `format` | pattern or preset (`iso`, `rfc3339`, `unix`, `human`, `short`, `json`, `yaml`) | Display format |
 | `--tz` | `tz` | IANA zone, place, alias, or fuzzy name (e.g. `America/Mexico_City`, `los_angeles`, `CDMX`, `UTC`) | Default timezone (defaults to system zone) |
-| `-z`, `--show-tz`, `--show-timezone` | `show_timezone` | `true`, `false` (flag alone sets `true`) | Append timezone to formatted output |
+| `-z`, `--show-tz`, `--show-timezone` | `show_timezone` | `true`, `false` (flag alone sets `true`) | Always append the timezone to formatted output (it is added automatically when the result is in a zone other than your local one, unless you give `-f`) |
 | `--units` | `units` | `long`, `short`, `none` | Unit display style on numeric results (default `long`) |
 | `--lang` | `lang` | `en`, `es` | Default language (defaults from `LC_ALL` / `LANG`, else `en`) |
 | `--strict` | `strict` | `true`, `false` (flag alone sets `true`) | Error on ambiguous input or out-of-order stages |
@@ -267,6 +267,9 @@ By default `every …` and `cron "…"` list the next 5 occurrences; `next N` ta
 …, to <timezone>         → convert
 …, to UTC
 now to Tokyo             → places (IANA city names, case- and accent-insensitive)
+sat 12:30 pm pst, to cst  → bare zone after a clock; CST = your local zone when it uses CST
+9am to 5pm              → a span without "from"
+9am to 5pm @ Tokyo       → a zone on the end applies to both ends
 now to Los Angeles       → unquoted multi-word places
 now to CDMX              → aliases (CDMX, NYC, DC, SF, LA, Tokio, Londres, …)
 now to california        → states, countries & major cities (seattle, guadalajara, spain, japan, …)

@@ -243,6 +243,10 @@ func TestZone(t *testing.T) {
 		{name: "offset datetime in Asia/Tokyo converts", input: "2026-11-14T14:30:00-06:00 in Asia/Tokyo", want: "2026-11-15T05:30:00+09:00"},
 		{name: "offset datetime @ Asia/Tokyo reinterprets wall clock", input: "2026-11-14T14:30:00-06:00 @ Asia/Tokyo", want: "2026-11-14T14:30:00+09:00"},
 		{name: "now to Atlantis error", input: "now to Atlantis", wantErr: "Atlantis"},
+		{name: "bare zone after clock, to local CST", input: "sat 12:30 pm pst, to cst", want: "2026-11-14T14:30:00-06:00"},
+		{name: "spanish bare zone after clock", input: "sáb 12:30 pm pst, to cst", want: "2026-11-14T14:30:00-06:00"},
+		{name: "CST ambiguous outside local zone", input: "now to cst", loc: nyLoc, now: "2026-11-14T14:30:00-05:00", wantErr: "ambiguous"},
+		{name: "CST ambiguous under strict", input: "now to cst", strict: true, wantErr: "ambiguous"},
 		{name: "now to Local rejected", input: "now to Local", wantErr: "Local"},
 		{
 			name:    "strict NY DST spring forward nonexistent wall time",

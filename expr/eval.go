@@ -1105,6 +1105,12 @@ func daysInMonth(y int, m time.Month) int {
 }
 
 func (ev *evaluator) lookupZoneNode(n Node) (*time.Location, error) {
+	// An ambiguous abbreviation (CST, IST...) means the local zone when it currently uses it.
+	if _, amb := ambiguousAbbrevs[foldZone(n.Text)]; amb && ev.ctx.Loc != nil && !ev.ctx.Cfg.Strict {
+		if abbr, _ := ev.ctx.Now.In(ev.ctx.Loc).Zone(); strings.EqualFold(abbr, strings.TrimSpace(n.Text)) {
+			return ev.ctx.Loc, nil
+		}
+	}
 	loc, err := LookupZone(n.Text, ev.ctx.Cfg.Strict)
 	if err != nil {
 		if e, ok := err.(*Error); ok {

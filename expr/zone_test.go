@@ -376,7 +376,8 @@ func TestZoneEndToEnd(t *testing.T) {
 		{name: "now to JST", input: "now to JST", want: "2026-11-15T05:30:00+09:00"},
 		{name: "9am @ NYC, to Tokyo", input: "9am @ NYC, to Tokyo", want: "2026-11-14T23:00:00+09:00"},
 		{name: "now to Ciudad de México", input: `now to "Ciudad de México"`, want: "2026-11-14T14:30:00-06:00"},
-		{name: "now to CST ambiguous", input: "now to CST", wantErr: "ambiguous", wantPos: 7},
+		{name: "now to IST ambiguous", input: "now to IST", wantErr: "ambiguous", wantPos: 7},
+		{name: "now to CST is the local zone", input: "now to CST", want: "2026-11-14T14:30:00-06:00"},
 		{name: "summer NY DST to UTC", input: "2026-07-01 12:00 @ New York, to UTC", want: "2026-07-01T16:00:00Z"},
 		{name: "winter NY std to UTC", input: "2026-12-01 12:00 @ New York, to UTC", want: "2026-12-01T17:00:00Z"},
 

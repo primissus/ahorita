@@ -28,7 +28,7 @@ Grammar of ahorita expressions (canonical English keys after Lex + Normalize):
 	mul-rhs      = Number                   (* parsed as num even if 4 digits *)
 	             | postfix-expr ;
 
-	postfix-expr = of-expr { clock | "@" zone | "in" zone } ;
+	postfix-expr = of-expr { clock [ zone-abbrev ] | "@" zone | "in" zone } ;
 	of-expr      = primary [ "of" of-expr ] ;  (* allowed after week, weekday, month, period *)
 
 	primary      = Date | DateTime | SlashDate
@@ -355,6 +355,32 @@ func parsePipeline(origInput, exprText string, posOffset int, lang Lang, aliases
 			}
 			continue
 		}
+		if tok.Kind == Word && tok.Key == "to" {
+			// "A to B": when B is a value (not a unit, keyword or zone), it is a span like "from A to B".
+			save := p.pos
+			p.next()
+			if p.startsRangeEnd() {
+				toVal, err := p.parseExpr(bpAdd)
+				if err != nil {
+					return Expr{}, err
+				}
+				last := &expr.Stages[len(expr.Stages)-1]
+				*last = Node{Op: "span", Pos: last.Pos, Args: []Node{shareZone(*last, toVal), toVal}}
+				tok = p.cur()
+			} else {
+				p.pos = save
+			}
+		}
+		if tok.Kind == EOF {
+			break
+		}
+		if tok.Kind == Op && (tok.Text == "," || tok.Text == "|") {
+			p.next()
+			if p.cur().Kind == EOF {
+				return Expr{}, p.unexpectedErr(p.cur(), "a value")
+			}
+			continue
+		}
 		if tok.Kind == Word && (tok.Key == "to" || (tok.Key == "in" && p.startsInUnit())) {
 			// Stage-level "to" or "in <unit>" starts a new stage without consuming it.
 			continue
@@ -607,6 +633,14 @@ func (p *parser) parsePostfix(afterMul bool) (Node, error) {
 				return Node{}, err
 			}
 			n = Node{Op: "at", Pos: n.Pos, Args: []Node{n, c}}
+			// A bare zone name right after the clock: "sat 12:30 pm pst".
+			if t := p.cur(); t.Kind == Word && t.Key == "" && p.looksLikeZone(t.Text) {
+				z, err := p.parseZone()
+				if err != nil {
+					return Node{}, err
+				}
+				n = Node{Op: "interpret", Pos: n.Pos, Args: []Node{n, z}}
+			}
 			continue
 		}
 		if p.cur().Kind == Op && p.cur().Text == "@" {
@@ -1326,7 +1360,7 @@ func (p *parser) parseFromSpan() (Node, error) {
 	if err != nil {
 		return Node{}, err
 	}
-	return Node{Op: "span", Pos: fTok.Pos, Args: []Node{fromVal, toVal}}, nil
+	return Node{Op: "span", Pos: fTok.Pos, Args: []Node{shareZone(fromVal, toVal), toVal}}, nil
 }
 
 func (p *parser) parseBetweenSpan() (Node, error) {
@@ -1442,6 +1476,16 @@ func (p *parser) parseClock() (Node, error) {
 		}
 	}
 	return Node{}, p.unexpectedErr(tok, "a time")
+}
+
+// looksLikeZone reports whether a single unknown word is a zone abbreviation (known or ambiguous).
+func (p *parser) looksLikeZone(w string) bool {
+	f := foldZone(w)
+	if _, ok := zoneAbbrevs[f]; ok {
+		return true
+	}
+	_, ok := ambiguousAbbrevs[f]
+	return ok
 }
 
 func (p *parser) parseZone() (Node, error) {
@@ -1565,6 +1609,29 @@ func formatClock24(raw, ampm string, pos int) (string, error) {
 		h += 12
 	}
 	return fmt.Sprintf("%02d:00", h), nil
+}
+
+// shareZone gives a clock-only start the zone typed on the end: "sat 12:30 to sat 3 pm pst".
+func shareZone(from, to Node) Node {
+	if to.Op == "interpret" && len(to.Args) == 2 && (from.Op == "at" || from.Op == "clock") {
+		return Node{Op: "interpret", Pos: from.Pos, Args: []Node{from, to.Args[1]}}
+	}
+	return from
+}
+
+// startsRangeEnd reports whether the current token (after "to") begins a value rather than a
+// unit, to-keyword or zone.
+func (p *parser) startsRangeEnd() bool {
+	t := p.cur()
+	switch {
+	case t.Kind == EOF || t.Kind == Illegal || t.Kind == String || t.Kind == Op && (t.Text == "+" || t.Text == "-"):
+		return false
+	case t.Kind == Word && (isUnitKey(t.Key) || toKeys[t.Key]):
+		return false
+	case p.canStartZone():
+		return false
+	}
+	return true
 }
 
 func (p *parser) canStartZone() bool {

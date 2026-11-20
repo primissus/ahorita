@@ -9,7 +9,7 @@
 - **Period** → a named stretch of the calendar (`last week`, `next month`, `Q3`, `sept`). Always evaluates to a span.
 - **Interpret vs convert** → `2pm @ Tokyo` reads the clock time as Tokyo time. `now to Tokyo` shows the same instant on Tokyo's clock.
 - **Output type** → `-t date|datetime|time|range|relative`. Without it, the type follows the result.
-- **Display format** → Java-style pattern (`dd-MM-yyyy HH:mm`) or a preset (`iso`, `rfc3339`, `unix`, `human`). Default is ISO.
+- **Display format** → Java-style pattern (`dd-MM-yyyy HH:mm`) or a preset (`iso`, `rfc3339`, `unix`, `human`). Default is ISO. A result outside the local zone gets its zone name appended.
 - **Business day** → a day that isn't a weekend day (Saturday and Sunday by default), a holiday in the active country (MX by default), or one of the user's own days off.
 - **Strict mode** → `--strict`: any ambiguous input is an error instead of a best guess.
 - **Canonical keyword** → the English word the normalizer maps every synonym and Spanish word to (`pasado` → `last`).
